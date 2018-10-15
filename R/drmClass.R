@@ -6,9 +6,11 @@
 
 # parse optional arguments list and return a list with any defaults substituted for passed-in values
 parseDots = function(lst){
-  defaults = list("tol" = 1.e-4,"maxit" = 150, "verbosity" = 0,
+  defaults = list("tol" = 1.e-5,"maxit" = 150, "verbosity" = 0,
                   "maxstep" = 10,"justbeta" = FALSE, "method" = "Brent")
-  if(max(sapply(lst,"length"))>1) stop("drm: options list should contain only length-1 vectors.")
+  lst = lst[!sapply(lst,is.null)] # avoid 'if arg. of length zero' error
+  if(length(lst)==0) return(defaults)
+  if(max(lengths(lst))>1) stop("drm: options list should contain only length-1 vectors.")
   selected = defaults
   modes = c("numeric","integer","integer","numeric","logical","character")
   names(lst) = tolower(names(lst))
@@ -55,7 +57,7 @@ parseDots = function(lst){
 #' \code{justBeta}, indicating whether to only fit a point estimate
 #' \code{method}, if "Brent", uses Brent's method to find a suitable objective function decrease in the current search direction.
 #' Otherwise, uses a cubic approximation to fulfill the Wolfe conditions. Both methods use the BFGS Quasi-Newton algorithm to pick
-#' candidate directions. The 'Brent' method seems to be a little more stable for this problem.
+#' candidate directions. The 'Brent' method seems to be a little more stable for this problem, but both should yield the same estimates.
 #' Defaults are \code{list(1.0e-4,150,0,10,FALSE,"Brent")}, respectively.
 #' Other elements in \code{fitOptions} will not raise an error, but they are ignored. Names do not need to match in a case-sensitive manner.
 #' @return A DRM object.  Use \code{summary(x)} or \code{plot(x)} to obtain summary information or \code{names(x)} to view all fields, 
@@ -65,11 +67,12 @@ parseDots = function(lst){
 #' @seealso \code{\link[mdrm:summary-DRM_-method]{summary}}, \code{\link[mdrm:plot-DRM_-method]{plot}}, \code{\link[mdrm:names-DRM_-method]{names}}
 #' @export
 drm = function(formula,data,subset,na.action,contrasts=NULL,fitOptions=list()){
-	cl = match.call()   # this one is just used to return the call along with the model summary
+  cl = match.call()   # this one is just used to return the call along with the model summary
   mf = match.call(expand.dots = FALSE)
   m = match(c("formula", "data", "subset", "na.action"), names(mf), 0L)  # unlike lm(), no offset or weights!
   mf = mf[c(1L, m)]
   mf$drop.unused.levels = TRUE
+  mf$na.action = "na.omit" # no method of dealing with missing values here
   mf[[1L]] = quote(stats::model.frame)
   mf = eval(mf, parent.frame())  # creates the model frame
 	mt = attr(mf, "terms")   # passed into model.matrix() instead of a formula
@@ -87,7 +90,7 @@ drm = function(formula,data,subset,na.action,contrasts=NULL,fitOptions=list()){
 	res = fitdrm(Obj@Y,Obj@X,TOL=defOpt$tol,MAXIT=defOpt$maxit,verb=defOpt$verbosity,maxStep=defOpt$maxstep,
 		justBeta = defOpt$justbeta,method = defOpt$method)  # "internal" fitting function
 	if(length(res) == 1L){
-		stop("An error occurred in model fitting. Perhaps re-scale the data or try fiddling with fitOptions...")
+		stop("An error occurred in model fitting. Perhaps re-scale the data or try exporing fitOptions.")
 	}
 	Obj@U = res$U
 	Obj@beta = rbind(res$b0,as.matrix(res$beta))
@@ -151,11 +154,11 @@ setMethod(f = "print", signature = "DRM_",
 	definition = function(x){
 	  if(x@is_fitted){
 	    cat("\nAn object of class 'DRM'\n");
-	    cat("Call:\n"); print(x@user.call)
-	    cat(paste0("# observations: ",x@N,"\n"))
+	    cat("Call:\n\t"); print(x@user.call)
+	    cat(paste0("\n# observations: ",x@N,"\n"))
 	    cat(paste0("Unique Outcomes: ",length(x@Fhat),"\n"))
-	    cat("Regression coefficients: \n")
-	    print(x@beta)  
+	    cat("\nRegression coefficients: \n")
+	    print(round(x@beta,digits=3))
 	  } else {
 	    cat('\nThis object has not been fit yet.\n')
 	  }
@@ -207,7 +210,20 @@ setMethod(f = "vcov",signature = "DRM_",
 		return(object@covHat)
 	})
 
-#' Get the residuals from a fitted DRM model
+#' Extract log-likelihood
+#' 
+#' Provides an S3-generic method for getting log-likelihood from objects of DRM class
+#' 
+#' @param object a fitted drm object
+#' @param ... extra arguments to satisfy method dispatch; are ignored
+#' @rdname logLik-method
+#' @export
+setMethod(f = "logLik",signature = "DRM_",
+          definition = function(object,...){
+            return(object@logLik)
+          })
+
+#' Extract Model Residuals
 #'
 #' Provides a convenient accessor to model residuals
 #' 
@@ -215,10 +231,26 @@ setMethod(f = "vcov",signature = "DRM_",
 #' @param ... extra arguments to satisfy method dispatch; are ignored
 #' @return Model residuals, a matrix of size \eqn{N\times Q} (naturally, of size \code{dim(Y)}). Only raw residuals are available
 #' @rdname residuals-method
-setMethod(f="residuals",signature="DRM_",
+#' @export
+setMethod(f = "residuals",signature = "DRM_",
           definition = function(object,...){
             return(object@resid)
           })
+
+#' Extract Model Residuals
+#'
+#' Provides a convenient accessor to model residuals
+#' 
+#' @param object a fitted drm object
+#' @param ... extra arguments to satisfy method dispatch; are ignored
+#' @return Model residuals, a matrix of size \eqn{N\times Q} (naturally, of size \code{dim(Y)}). Only raw residuals are available
+#' @rdname resid-method
+#' @export
+setMethod(f = "resid",signature = "DRM_",
+          definition = function(object,...){
+            return(object@resid)
+          })
+
 
 #' Get the sample size used in model fitting
 #' 
@@ -228,9 +260,33 @@ setMethod(f="residuals",signature="DRM_",
 #' @param ... more arguments (for consistency with the S3 generic function). It is ignored.
 #' @return The sample size N of this model
 #' @rdname nobs-method
-setMethod(f = "nobs",signature = "DRM_",
+#' @export
+setMethod(f = "nobs",
+          signature = "DRM_",
           definition = function(object,...){
             return(object@N)
+          })
+
+#' Get model coefficients
+#' 
+#' It is probably just as easy to use the slot names directly, but for consistency this method is available, too
+#' 
+#' @param object a fitted drm object
+#' @param ... a list; the named argument 'which' is parsed and may take values 'alpha', 'beta', or 'Fhat'.
+#' In this case, only that subset of parameters is returned.
+#' otherwise (by default), returns a list with both.
+#' @return A matrix or vector (if argument \code{which} is used), or a list with components \code{alpha}
+#' and \code{beta}
+#' @rdname coef-method
+#' @export
+setMethod(f = "coef",signature = "DRM_",
+          definition = function(object,...){
+            argL = list(...)
+            if("which" %in% names(argL)){
+              sn = argL[["which"]][1L]
+              if(sn %in% slotNames(object)) return(slot(object,sn))
+            }
+            list("beta" = object@beta,"alpha" = object@alpha,"Fhat" = object@Fhat)
           })
 
 #' Get model coefficients
@@ -242,17 +298,24 @@ setMethod(f = "nobs",signature = "DRM_",
 #' otherwise (by default), returns a list with both.
 #' @return A matrix or vector (if argument \code{which} is used), or a list with components \code{alpha}
 #' and \code{beta}
-#' @rdname coef-method
-setMethod(f = "coef",signature = "DRM_",
+#' @rdname coefficients-method
+#' @export
+setMethod(f = "coefficients",signature = "DRM_",
           definition = function(object,...){
-            argL = list(...)
-            if("which" %in% names(argL)){
-              sn = argL[["which"]]
-              if(sn %in% slotNames(object)) return(slot(object,sn))
-            }
-            list("beta" = object@beta,"alpha" = object@alpha,"Fhat" = object@Fhat)
+            coef(object,...) # alias for coef()
           })
 
+#' Extract Model Fitted Values
+#' 
+#' Identical to \code{object@Y - resid(object)}.
+#' 
+#' @param object a fitted drm object
+#' @return The fitted values of the response \code{Y}.
+#' @export
+setMethod(f = "fitted",signature = "DRM_",
+          definition = function(object,...){
+            object@Y - object@resid
+          })
 
 sig_star = function(pv){
   res = rep("",length(pv))
@@ -295,9 +358,8 @@ setMethod(f = "summary", signature = "DRM_",
 		pvalu = matrix(ifelse(object@p.value < 1.0e-6,"<1.0e-6",sprintf(cFmt,object@p.value)),ncol=Q)
 		sigs = matrix(sig_star(c(object@p.value)),ncol=Q)
 		zscores = matrix(sprintf(cFmt,object@beta/object@sdbeta),ncol=Q)
-		cat("Call:\n"); cat(object@user.call)
-		cat("Density ratio model fit:\n")
-		cat("\nCoefficients:\n")
+		cat("Call:\n"); print(object@user.call)
+		cat("\nDensity ratio model fit:\n\nCoefficients:\n")
 		ww = c(nameSpacer+2,10,10,8,8)  # widths of each column in output table
 		cat(makeLine(ww,c("","Estimate","Std. Error","z value","Pr(>|z|)")))
 		Ynames = colnames(object@Y)
@@ -310,8 +372,12 @@ setMethod(f = "summary", signature = "DRM_",
 			}
 			cat("\n")
 		}
-		cat(paste0("Log-likelihood: ",sprintf(cFmt,object@logLik*object@N),"\n"))
-		cat(paste0("# of parameters in model: ",length(Ynames)*length(Xnames)+nrow(object@U)-1,"\n"))
+		rcov = cov(object@resid)
+		cat("Residual (co)variance:\n")
+		prmatrix(format(rcov,digits = 3),rowlab=rep('',NROW(rcov)),collab = rep('',NCOL(rcov)),
+		         quote = FALSE)
+		cat("\n\nLog-likelihood:",sprintf(cFmt,logLik(object)))
+		cat("\n# of parameters in model:",Q*NROW(object@beta) + NROW(object@U) - 1,"\n")
 	})
 
 #' Likelihood ratio test
@@ -391,7 +457,7 @@ drm_loglik = function(oo,tstB){
 #' @rdname drmBootstrap-method
 #' @export
 drmBootstrap = function(formula,data,subset,na.action,B,summarize = FALSE,
-                        contrasts = NULL,fitOptions=list()){
+                        contrasts = NULL,fitOptions = list()){
   mf = match.call(expand.dots = FALSE)
   m = match(c("formula", "data", "subset", "na.action"), names(mf), 0L)  # unlike lm(), no offset or weights!
   mf = mf[c(1L, m)]
@@ -404,11 +470,11 @@ drmBootstrap = function(formula,data,subset,na.action,B,summarize = FALSE,
 	xx = model.matrix(mt, mf, contrasts)
 	defOpt = parseDots(fitOptions)
 	B = as.integer(B)[1L]
-	if(B <= 1L) stop("Number of bootstrap samples should exceed 1")
+	if(is.na(B) || B <= 1L) stop("Number of bootstrap samples should exceed 1")
 	res = drmBoot(yy,xx,B,defOpt$tol,defOpt$maxit,
 	              defOpt$verbosity,defOpt$method)
 	if(isTRUE(summarize)){
-		Q = ncol(res$betas[[1]])
+		Q = NCOL(res$betas[[1]])
 		bAdj = sapply(1:B,FUN = function(i){res$betas[[i]]%*%res$sigmas[[i]]})
 		bsd = apply(bAdj,1,sd)
 		return(matrix(bsd,ncol = Q,byrow = FALSE))

@@ -1,6 +1,7 @@
 // [[Rcpp::depends(RcppEigen)]]
 // [[Rcpp::plugins(cpp11)]]
 #include <RcppEigen.h>
+#include "util.h" // header-only functions that *other* functions in here depend on
 
 /*
  * Various utility functions which are not specific to the particular model
@@ -32,10 +33,11 @@ bool any_nan(VecRef x){
 
 // sample 'size' integers uniformly distributed on 1,...,N (inclusive!) for selecting nonparametric bootstrap samples
 // note: Rcpp includes the R distributions, which can be called as in R and return an Rcpp::NumericVector
+// though it may be cleaner (and its certainly faster here) to use a std::random instance
 VectorXi sample(const int N,const int size){
   VectorXi res(size);
   double u;
-  const double n = static_cast<double>(N); // Rf_runif parameter
+  const double n{static_cast<double>(N)}; // Rf_runif parameter
   for(int i=0;i<size;i++){
     u = ::Rf_runif(0.,n);
     res(i) = std::ceil(u);
@@ -73,7 +75,7 @@ MatrixXd uniq(MatRef Y,VectorXi& uniqCnt,Eigen::Ref<Eigen::VectorXi> inxMap){
   return U.block(0,0,curry,P);
 }
 
-// [[Rcpp::export]]
+/*
 Rcpp::List uniq_counts(const Rcpp::NumericMatrix X){
   const MapMxd xx(Rcpp::as<MapMxd>(X));
   VectorXi uc(xx.rows()),uinx(xx.rows());
@@ -83,8 +85,9 @@ Rcpp::List uniq_counts(const Rcpp::NumericMatrix X){
     Rcpp::Named("uc") = uc
   );
 }
+*/
 
-// [[Rcpp::export]]
+/*
 double drm_ll(Rcpp::NumericMatrix xx,Rcpp::NumericMatrix yy,Rcpp::NumericMatrix uu,
 	Rcpp::NumericVector ucnt,Rcpp::NumericVector theta){
 		
@@ -99,8 +102,9 @@ double drm_ll(Rcpp::NumericMatrix xx,Rcpp::NumericMatrix yy,Rcpp::NumericMatrix 
   double lik = (Y.cwiseProduct(XB)).sum() + uc.dot(alpha) -  (E.colwise().sum()).log().sum();
   return (1.0/n)*lik;
 }
+*/
 
-// [[Rcpp::export]]
+/*
 Rcpp::NumericVector drm_grad(Rcpp::NumericMatrix xx,Rcpp::NumericMatrix yy,Rcpp::NumericMatrix uu,
                              Rcpp::NumericVector ucnt,Rcpp::NumericVector theta){
   
@@ -123,8 +127,9 @@ Rcpp::NumericVector drm_grad(Rcpp::NumericMatrix xx,Rcpp::NumericMatrix yy,Rcpp:
   gg *= (1./static_cast<double>(n));
   return Rcpp::wrap(gg);
 }
+*/
 
-// [[Rcpp::export]]
+/*
 Rcpp::NumericMatrix drm_hess(Rcpp::NumericMatrix xx,Rcpp::NumericMatrix yy,Rcpp::NumericMatrix uu,
                              Rcpp::NumericVector ucnt,Rcpp::NumericVector theta){
   
@@ -177,8 +182,9 @@ Rcpp::NumericMatrix drm_hess(Rcpp::NumericMatrix xx,Rcpp::NumericMatrix yy,Rcpp:
   H *= (1.0/static_cast<double>(n));
   return Rcpp::wrap(H);
 }
+*/
 
-/*
+
 // sample covariance matrix
 MatrixXd cov(MatRef X){
   const int N = X.rows();
@@ -188,7 +194,7 @@ MatrixXd cov(MatRef X){
   return (1./(N-1))*sscp;
 }
 
-inline VectorXd vectorize(MatRef M){
+VectorXd vectorize(MatRef M){
   const int P = M.rows(), Q = M.cols();
   VectorXd res(P*Q);
   for(int i=0;i<Q;i++){
@@ -197,7 +203,7 @@ inline VectorXd vectorize(MatRef M){
   return res ;
 }
 
-inline MatrixXd unVectorize(VecRef vec,const int ncols){
+MatrixXd unVectorize(VecRef vec,const int ncols){
   const int r = vec.size()/ncols;
   if(r <= 1) return vec.transpose();
   MatrixXd mat(r,ncols);
@@ -207,15 +213,7 @@ inline MatrixXd unVectorize(VecRef vec,const int ncols){
   return mat;
 }
 
-// the rankUpdate method maps X -> X + alpha*A*A^T for scalar (double) alpha
-inline MatrixXd AtA(MatRef A){
-  const int p(A.cols());
-  return MatrixXd(p,p).setZero().selfadjointView<Lower>().rankUpdate(A.adjoint());
-}
-
-// compute OLS beta using LLT decomposition.
-MatrixXd betaFit(const MatrixXd &Y,const MatrixXd &X){
+MatrixXd betaFit(MatRef Y,MatRef X){
   const Eigen::LLT<MatrixXd> thellt(AtA(X)); // compute the Cholesky decomposition of X'X
   return thellt.solve(X.adjoint()*Y);
 }
-*/

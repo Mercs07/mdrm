@@ -28,7 +28,7 @@ Y2U = function(y,p=0.67,minB){
 # instead we should marginalize the data
 # on values of the count variable and bin within these subsets
 # the values 50 and .075 are just heuristics and could possibly be improved (consider the trade-offs between p and these numbers also)
-mbin = function(disc,cont,p=0.5){
+mbin = function(disc,cont,p = 0.5){
 	uv = unique(disc)
 	for(v in uv){
 		ss = disc==v
@@ -37,13 +37,13 @@ mbin = function(disc,cont,p=0.5){
 	cont	
 }
 
-Y2U2 = function(Y,p=0.5,plot=FALSE){
+Y2U2 = function(Y,p = 0.5,plot = FALSE){
 	if(NCOL(Y)==1)     return(Y2U(Y,p))
 	if(NCOL(Y)>2)      stop("Need a 2-column matrix.")
 	if(p <= 0 | p > 1) stop("Pass a power between zero and one.")
 	if(any(is.na(Y)))  stop("Please remove missing values first.")
 	rr = apply(Y,2,range)
-	uu = apply(Y,2,FUN=function(z){length(unique(z))})
+	uu = apply(Y,2,FUN = function(z){length(unique(z))})
 	N = nrow(Y)
 	gw = round(N^p)
 	discTst = round(N^0.5) # heuristic to see if Y is 'discrete' enough
@@ -51,7 +51,7 @@ Y2U2 = function(Y,p=0.5,plot=FALSE){
 	if(max(uu) < discTst) U = Y # both vars. already discret(ized)
 	else if(uu[1] < discTst) U = cbind(Y[,1],mbin(Y[,1],Y[,2],p))
 	else if(uu[2] < discTst) U = cbind(mbin(Y[,2],Y[,1],p),Y[,2])
-	else { # nether varaible is discrete - use hexbin
+	else { # nether variable is discrete - use hexbin
 	  require(hexbin)
 	  hexy = hexbin(Y,xbins = round(N^p),IDs = TRUE)
 	  U = t(sapply(seq_along(hexy@cID),function(i){

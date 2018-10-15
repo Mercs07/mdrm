@@ -4,7 +4,8 @@
 \alias{drm}
 \title{(Multivariate) Density Ratio Model}
 \usage{
-drm(formula, data, subset, na.action, contrasts = NULL, fitOptions = list())
+drm(formula, data, subset, na.action, contrasts = NULL,
+  fitOptions = list())
 }
 \arguments{
 \item{formula}{A formula specifying the response and predictors, in the same manner as \code{lm}, \code{glm}, etc.}
@@ -27,7 +28,7 @@ Otherwise, we directly compare the Euclidean norm of the gradient to \code{tol}.
 \code{justBeta}, indicating whether to only fit a point estimate
 \code{method}, if "Brent", uses Brent's method to find a suitable objective function decrease in the current search direction.
 Otherwise, uses a cubic approximation to fulfill the Wolfe conditions. Both methods use the BFGS Quasi-Newton algorithm to pick
-candidate directions. The 'Brent' method seems to be a little more stable for this problem.
+candidate directions. The 'Brent' method seems to be a little more stable for this problem, but both should yield the same estimates.
 Defaults are \code{list(1.0e-4,150,0,10,FALSE,"Brent")}, respectively.
 Other elements in \code{fitOptions} will not raise an error, but they are ignored. Names do not need to match in a case-sensitive manner.}
 }

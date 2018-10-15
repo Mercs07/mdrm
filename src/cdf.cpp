@@ -1,6 +1,6 @@
-#include <iostream>  // maybe not needed if just linked to R and using Rcpp::Rcout
-#include <algorithm> // for std::swap in the sorting routine
-#include <cstring>   // for memcpy
+#include <iostream>  // std::endl
+#include <algorithm> // std::swap in the sorting routine
+#include <cstring>   // memcpy
 #include <vector>    // right now this is just used for uniq1 - could make things more primitive
 #include <utility>   // std::pair
 // [[Rcpp::depends(RcppEigen)]]
@@ -191,10 +191,6 @@ Rcpp::List cdF(Rcpp::NumericMatrix uu, Rcpp::NumericVector ff,int verbose = 0,bo
 	} else { // no sorting needed
 	  for(int i=0;i<M;i++) block_counts.emplace_back(std::make_pair(i,1));
 	}
-	// if(verbose > 1){
-	  // for(auto it = block_counts.cbegin();it!=block_counts.cend();++it)
-	    // Rcpp::Rcout << "<" << it->first << "," << it->second << ">" << std::endl;
-	// }
 	// now the matrix should be sorted first by col0, then by col1 within col0
 	// since the rows of the matrix are unique, tied X values cannot have tied Y values, 
 	// so we only need to account for ties in 1 dimension
@@ -223,7 +219,7 @@ Rcpp::List cdF(Rcpp::NumericMatrix uu, Rcpp::NumericVector ff,int verbose = 0,bo
 		Rcpp::Named("ux") = Rcpp::wrap(UX),
 		Rcpp::Named("uy") = Rcpp::wrap(UY),
 		Rcpp::Named("cdf") = Rcpp::wrap(cdf)
-		);
+	);
 }
 
 

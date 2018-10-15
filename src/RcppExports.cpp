@@ -87,13 +87,13 @@ BEGIN_RCPP
 END_RCPP
 }
 // fitdrm
-Rcpp::List fitdrm(const Eigen::MatrixXd Y, const Eigen::MatrixXd X, double TOL, int MAXIT, int verb, double maxStep, bool justBeta, std::string method);
+Rcpp::List fitdrm(Rcpp::NumericMatrix Y, Rcpp::NumericMatrix X, double TOL, int MAXIT, int verb, double maxStep, bool justBeta, std::string method);
 RcppExport SEXP _mdrm_fitdrm(SEXP YSEXP, SEXP XSEXP, SEXP TOLSEXP, SEXP MAXITSEXP, SEXP verbSEXP, SEXP maxStepSEXP, SEXP justBetaSEXP, SEXP methodSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< const Eigen::MatrixXd >::type Y(YSEXP);
-    Rcpp::traits::input_parameter< const Eigen::MatrixXd >::type X(XSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type Y(YSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
     Rcpp::traits::input_parameter< double >::type TOL(TOLSEXP);
     Rcpp::traits::input_parameter< int >::type MAXIT(MAXITSEXP);
     Rcpp::traits::input_parameter< int >::type verb(verbSEXP);

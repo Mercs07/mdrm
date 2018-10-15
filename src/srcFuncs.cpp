@@ -1,14 +1,11 @@
-#include <RcppEigen.h>  // the documentation never mentions this header and it is included in RcppExports.cpp, but it is also necessary to include here
-#include <string>
-#include <cmath>  // std::ceil. Also includes rand() which causes R CMD check to complain about the RNG. just don't use the actual rand() function.
-
 // [[Rcpp::depends(RcppEigen)]]
 // [[Rcpp::plugins(cpp11)]]
+#include <RcppEigen.h> 
+#include <string>
+#include <cmath>  // std::ceil
 
-// NR - based routines
-#include "util.h"
-#include "quasinewtonEigen.h"    // from 3rd edition of NR - fancy cubic interpolation which is probably totally unnecessary, viz. the large number of gradient-only optimizers
-#include "brent_linmin_EigenR.h" // Brent's method with Golden Section search - more stable, seemingly, than the cubic interpolation approach above
+#include "util.h" // some helper functions
+#include "linemins.h" // two line search methods; prefer using "Brent" for stability
 
 using Rcpp::Named;
 using namespace Eigen;
@@ -24,6 +21,7 @@ using VecRef = const Eigen::Ref<const Eigen::VectorXd>&;
 // Object to hold the data plus all current values
 class mdrm{
 public:
+
   int n,p,q,nParam,m;
   bool initialized;
   double stpmax;  // the max. step size in lineSearch
@@ -65,7 +63,7 @@ public:
     double lik = (Y.cwiseProduct(XB)).sum() + uc.dot(alp) -  (E.colwise().sum()).log().sum();
     return (-1.0/n)*lik;
   }
-  void df(VecRef th,Eigen::Ref<VectorXd> gg) const; // this signature is for compatibility with the NR Brent method
+  void df(VecRef th,Eigen::Ref<VectorXd> gg) const; // first arg: current parameters. second arg: vector which stores gradient
   VectorXd gradF(VecRef th) const;
   MatrixXd yhat(VecRef theta) const { // calculate predicted values for given parameters Use these to calculate residual covariance, goodness of fit, etc.
     const MatrixXd XB = X*unVectorize(theta.tail(p*q),q);
@@ -79,7 +77,7 @@ public:
 };
 
 // one global class member for Brent method
-mdrm G;
+static mdrm G;
 
 // wrappers for Brent method
 double drmLL(VecRef theta){
@@ -93,7 +91,7 @@ VectorXd drmGrad(VecRef theta){
   return res;
 }
 
-void mdrm::df(VecRef th,Eigen::Ref<VectorXd> gg) const { // negative gradient, scaled by sample size
+void mdrm::df(VecRef th,Eigen::Ref<Eigen::VectorXd> gg) const { // negative gradient, scaled by sample size
   if(gg.size() != nParam){gg.resize(nParam);}
   const MatrixXd XB( X*unVectorize(th.tail(p*q),q) );
   VectorXd alp(m);
@@ -126,7 +124,6 @@ VectorXd mdrm::gradF(VecRef th) const { // gradient with respect to F, for testi
   for(int a=0;a<p;a++){
     for(int b=0;b<q;b++){
       int pos = m - 1 + a%p + b/p;
-      // Rcpp::Rcout << "(a,b) = (" << a << "," << b << "), pos = " << pos << std::endl;
       tmp = (Y.col(b).array() - (Ef*U.col(b)).array()/denoms);
       res(pos) = X.col(a).dot(tmp);
     }
@@ -264,7 +261,7 @@ void d2LL(const mdrm& D,VecRef theta,Ref<MatrixXd> H){
 }
 
 // Hessian with respect to F and beta; assume the input vector has F, not alpha
-// BUT the input F is the same size as alpha, i.e. D.m - 1. We add the last jump size
+// BUT the input F is the same size as alpha, i.e. D.m - 1, and the last jump size is calculated
 void d2LLF(const mdrm& D,VecRef theta,Ref<MatrixXd> H){
   const MatrixXd XB = D.X*unVectorize(theta.tail(D.p*D.q),D.q);
   ArrayXd F(D.m);
@@ -298,13 +295,11 @@ void d2LLF(const mdrm& D,VecRef theta,Ref<MatrixXd> H){
       tmp = D.U(z,b)*E.col(z) - D.U(M,b)*E.col(M);
       t1 = (Xa.col(a)*tmp/denoms).sum();
       t2 = (Xa.col(a)*Edif.col(z)*((Ef.matrix()*D.U.col(b)).array())/d2).sum();
-      //Rcpp::Rcout << "z = " << z << ", (a,b) = (" << a << "," << b << "); t1 and t2: " << t1 << ", " << t2 << std::endl;
       H(M + i,z) = t2 - t1;
       H(z,M + i) = H(M + i,z);
     }
   }
   // lower block: d2l/dbeta,dbeta
-  //VectorXd uu(D.m);
   ArrayXd uu(D.m);
   for(int y=0;y<P;y++){
     a = y%D.p;  b = y/D.p;
@@ -357,48 +352,45 @@ VectorXd beta0(const mdrm& D){
   return vectorize(bhat);
 }
 
-template<int T> // T is -1 (Eigen::Dynamic) or 1 (VectorXd)
-void printrng(Eigen::Matrix<double,Eigen::Dynamic,T>& M,const char* name){
-  Rcpp::Rcout << "Range of " << name << ": " << M.minCoeff() << ", " << M.maxCoeff() << std::endl;
-}
-
 //[[Rcpp::export]]
-Rcpp::List fitdrm(const Eigen::MatrixXd Y,const Eigen::MatrixXd X,
+Rcpp::List fitdrm(Rcpp::NumericMatrix inY,Rcpp::NumericMatrix inX,
                   double TOL = 0.,int MAXIT = 100,int verb = 0,double maxStep=10.,
-                  bool justBeta=false,std::string method = "Brent"){
+                  bool justBeta=false, const std::string method = "Brent"){
+  using namespace Eigen;
+  const Map<MatrixXd> X(Rcpp::as<Map<MatrixXd>>(inX)), Y(Rcpp::as<Map<MatrixXd>>(inY));
   const mdrm D(X,Y,verb);
   VectorXd theta0(D.nParam);
   theta0.head(D.m - 1) = 0.5*ArrayXd::Random(D.m - 1); // randomly initialized alpha in (-0.5, 0.5) range.
   theta0.tail(D.p*D.q) = beta0(D); // initialize beta to linear approximation
   if(TOL < 1.0e-10) TOL = 1.0e-5*sqrt(D.nParam); // though TOL has a default, it's interpretation is different for the two methods
-  double MLE; // holds min. attained value
-  int nit = 0;
+  funcMin opt_param;
   if(method=="Brent"){
     G.init(X,Y,verb);
-    funcMin res = dfpmin(theta0,drmLL,drmGrad,TOL,verb);
-    theta0 = res.arg_min;
-    MLE = res.min_value;
-    nit = res.iterations;
-  } else { // cubic interpolation method, which may throw exceptions
-    try{
-      dfpmin(theta0,TOL,nit,MLE,D,VectorXi::Constant(1,-1),verb);
-    } catch(std::exception& _ex_){
-      forward_exception_to_r(_ex_);  // a weird issue here: forward_exception_to_r is defined within Rcpp but isn't in Rcpp namespace.
-    } catch(const char* errMsg){
-      Rcpp::stop(errMsg);
-    } catch(...){
-      ::Rf_error("c++ exception (unknown reason!)"); // the scope resolution operator :: with no LHS refers to global namespace (in case it was overridden within function scope?)
-    }	
   }
+  try{
+    if(method=="Brent"){
+      opt_param = dfpmin(theta0,drmLL,drmGrad,TOL,verb);
+    } else {
+      opt_param = dfpmin(theta0,D,TOL,verb,VectorXi::Constant(1,-1));
+    }
+  } catch(std::exception& _ex_){
+    forward_exception_to_r(_ex_);  // hmm, forward_exception_to_r is defined within Rcpp but isn't in Rcpp namespace.
+  } catch(std::string errMsg){
+    Rcpp::stop(errMsg);
+  } catch(const char* errMsg){
+    Rcpp::stop(errMsg);
+  } catch(...){
+    ::Rf_error("c++ exception (unknown reason!)");
+  }
+  theta0 = opt_param.arg_min;
   const MatrixXd resid = D.Y - D.yhat(theta0);
-  Rcpp::Rcout << "Covariance matrix of residuals:\n" << resid << std::endl;
-  printrng(theta0,'fitted parameters');
+  printrng(theta0,"fitted parameters");
   VectorXd Fhat = A2F(theta0.head(D.m-1));
   printrng(Fhat,"Fhat");
   MatrixXd betahat = unVectorize(theta0.tail(D.p*D.q),D.q);
   Rcpp::Rcout << "beta-hat is :\n" << betahat << std::endl;
   // intercept
-  VectorXd b0 = D.U.transpose()*Fhat;
+  VectorXd b0 = D.U.transpose()*(Fhat*D.uc); // *weighted* product
   VectorXd og(D.nParam);
   D.df(theta0,og); // return gradient
   if(justBeta){  // don't bother with calculating Hessian and standard errors
@@ -408,47 +400,48 @@ Rcpp::List fitdrm(const Eigen::MatrixXd Y,const Eigen::MatrixXd X,
       Named("F") = Fhat,
       Named("alpha") = Rcpp::wrap(theta0.head(D.m-1)),
       Named("residuals") = resid,
-      Named("iterations") = nit,
+      Named("iterations") = opt_param.iterations,
       Named("U") = D.U,
       Named("nUniq") = D.uc,
-      Named("logLik") = -MLE
+      Named("logLik") = -opt_param.min_value
     );
   }
   // calculating covariance parameters
   double nd = static_cast<double>(D.n);
   MatrixXd Ha(D.nParam,D.nParam),Hf(D.nParam,D.nParam); // standard errors for both alpha and F
   d2LL(D,theta0,Ha); // observed information with alpha
-  printrng(Ha,"Ha");
+  //printrng(Ha,"Ha");
   VectorXd thF = theta0;
   thF.head(D.m-1) = Fhat.head(D.m-1);
-  printrng(thF,"thF");
+  //printrng(thF,"thF");
   d2LLF(D,thF,Hf); // observed information with F
-  printrng(Hf,"Hf");
+  //printrng(Hf,"Hf");
   // VectorXd vara = -Ha.inverse().diagonal();
   MatrixXd covF = -Hf.inverse()/nd;
   VectorXd varF = covF.diagonal();
-  printrng(varF,"varF");
-  if(any_nan(varF)){
-    Rcpp::Rcout << "Bad values in varF!!\n";
+  //printrng(varF,"varF");
+  if(any_nan(varF) || varF.minCoeff() < 0.){
+    Rcpp::Rcout << "Bad values in varF!! Returning for diagnosis\n";
     return Rcpp::List::create(varF);
   }
   VectorXd b0sd(VectorXd::Zero(D.q));
-  MatrixXd HU(D.m-1,D.m-1), u1(D.U.topRows(D.m-1));
-  const double f_sum = covF.topLeftCorner(D.m-1,D.m-1).sum();
+  MatrixXd HF = covF.topLeftCorner(D.m-1,D.m-1), u1(D.U.topRows(D.m-1));
+  const double f_sum = Fhat.head(D.m-1).sum();
+  const VectorXd f_psum{HF.colwise().sum()}; // first part of covariance calculation
+  const VectorXd f_adj{f_sum*Fhat.head(D.m-1)}; // second part of covariance calculations
+  // the full m\times m covariance of F can be fortified with the differences f_psum - f_adj; this leaves the bottom right corner
+  // which is simply the sum of F's covariance matrix
   for(int j=0;j<D.q;j++){
-    HU = covF.topLeftCorner(D.m-1,D.m-1).array()*(u1.col(j)*u1.col(j).transpose()).array();
-    double tmp = HU.sum() + D.U(D.m-1,j)*D.U(D.m-1,j)*f_sum;
+    MatrixXd TT = HF.array()*(u1.col(j)*u1.col(j).transpose()).array();
+    double tmp = HF.sum() + D.U(D.m-1,j)*D.U(D.m-1,j)*f_sum; // NEEDS FIXING!!! more covariance conundrums!
     Rcpp::Rcout << "adding " << tmp << " to b0sd at index " << j << std::endl;
     b0sd(j) = tmp;
   }
-  if(varF.minCoeff() <= 0 ||
-     b0sd.minCoeff() <= 0) Rcpp::stop("Error: non-singular covariance!");
-  if(any_nan(b0sd)){
-    Rcpp::Rcout << "Bad values in b0sd!!\n";
-    return Rcpp::List::create(b0sd);
+  if(any_nan(b0sd) || b0sd.minCoeff() <= 0){
+    Rcpp::stop("Error: bad values in b0sd! Returning for diagnosis");
+    return Rcpp::List::create(Rcpp::Named("b0var") = b0sd);
   }
   b0sd = b0sd.array().sqrt();
-  // VectorXd sda = vara.array().sqrt().head(D.m-1);
   VectorXd sdF(D.m); sdF.head(D.m-1) = varF.array().sqrt().head(D.m-1);
   sdF(D.m-1) = f_sum;
   ArrayXXd sdbeta = unVectorize(varF.tail(D.p*D.q),D.q);  // these should match regardless of parametrization?
@@ -463,10 +456,10 @@ Rcpp::List fitdrm(const Eigen::MatrixXd Y,const Eigen::MatrixXd X,
     Named("alpha") = Rcpp::wrap(theta0.head(D.m-1)),
     Named("vcov") = Rcpp::wrap(covF),
     Named("residuals") = resid,
-    Named("iterations") = nit,
+    Named("iterations") = opt_param.iterations,
     Named("U") = D.U,
     Named("nUniq") = D.uc,
-    Named("logLik") = -MLE,
+    Named("logLik") = -opt_param.min_value,
     Named("gradient") = Rcpp::wrap(-og)
   );
 }
@@ -476,14 +469,14 @@ Rcpp::List fitdrm(const Eigen::MatrixXd Y,const Eigen::MatrixXd X,
 Rcpp::List drmBoot(Rcpp::NumericMatrix y,Rcpp::NumericMatrix x,int nBoot,double TOL=0,int MAXIT = 100,
                    int verb = 0,std::string method="Brent"){
   
+  using namespace Eigen;
   const MapMxd Y(Rcpp::as<MapMxd>(y));
   const MapMxd X(Rcpp::as<MapMxd>(x));
   const mdrm D(X,Y,verb);
   VectorXd theta0 = 0.5*VectorXd::Random(D.nParam);
   theta0.tail(D.p*D.q) = beta0(D); // initialize beta to linear approximation
   if(TOL < 1.0e-10) TOL = 1.0e-5*sqrt(D.nParam); // converge criterion defaults to a reasonable level but can be passed as a param (min. is 1^-10)
-  double MLE;
-  int nit,btry = 0,bdid = 0;
+  int btry = 0,bdid = 0;
   G.init(X,Y,verb); // use Brent method for initial fit just to get parameters in neighborhood
   funcMin res = dfpmin(theta0,drmLL,drmGrad,1.e-4,verb);
   theta0 = res.arg_min;
@@ -511,16 +504,12 @@ Rcpp::List drmBoot(Rcpp::NumericMatrix y,Rcpp::NumericMatrix x,int nBoot,double 
     } else {
       theta0 = initTh; // re-set since it will get changed at each instance
       try{
-        dfpmin(theta0,TOL,nit,MLE,D,VectorXi::Constant(1,-1),verb);
+        res = dfpmin(theta0,D,TOL,verb,VectorXi::Constant(1,-1));
         OKfit = true;
-      } catch(std::exception& _ex_){
-        //forward_exception_to_r(_ex_);  // a weird issue here: forward_exception_to_r is defined within Rcpp but isn't in Rcpp namespace.
-        continue;
       } catch(const char* errMsg){
-        //Rcpp::stop(errMsg);
+        Rcpp::Rcout << "Exception during bootstrap: " << errMsg << std::endl;
         continue;
       } catch(...){
-        //::Rf_error("c++ exception in drmBoot (unknown reason!)"); // :: with no LHS refers to global namespace (in case it had been was overridden locally?)
         continue;
       }
     }
