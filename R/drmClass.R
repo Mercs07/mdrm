@@ -106,7 +106,7 @@ drm = function(formula,data,subset,na.action,contrasts=NULL,fitOptions=list()){
 	Obj@iterations = res$iterations
 	colnames(Obj@U) = colnames(Obj@Y)
 	Obj@p.value=2*(1-pnorm(abs(Obj@beta)/Obj@sdbeta))
-	Obj@betaC = Obj@beta%*%(cov(Obj@resid))
+	Obj@betaC = rbind(res$b0,res$beta%*%(cov(Obj@resid))) # intercept does not need scaling
 	Obj@user.call = cl
 	Obj@is_fitted = TRUE
 	return(Obj)

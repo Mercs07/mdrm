@@ -384,11 +384,8 @@ Rcpp::List fitdrm(Rcpp::NumericMatrix inY,Rcpp::NumericMatrix inX,
   }
   theta0 = opt_param.arg_min;
   const MatrixXd resid = D.Y - D.yhat(theta0);
-  printrng(theta0,"fitted parameters");
   VectorXd Fhat = A2F(theta0.head(D.m-1));
-  printrng(Fhat,"Fhat");
   MatrixXd betahat = unVectorize(theta0.tail(D.p*D.q),D.q);
-  Rcpp::Rcout << "beta-hat is :\n" << betahat << std::endl;
   // intercept
   VectorXd b0 = D.U.transpose()*(Fhat*D.uc); // *weighted* product
   VectorXd og(D.nParam);
@@ -410,16 +407,12 @@ Rcpp::List fitdrm(Rcpp::NumericMatrix inY,Rcpp::NumericMatrix inX,
   double nd = static_cast<double>(D.n);
   MatrixXd Ha(D.nParam,D.nParam),Hf(D.nParam,D.nParam); // standard errors for both alpha and F
   d2LL(D,theta0,Ha); // observed information with alpha
-  //printrng(Ha,"Ha");
   VectorXd thF = theta0;
   thF.head(D.m-1) = Fhat.head(D.m-1);
-  //printrng(thF,"thF");
   d2LLF(D,thF,Hf); // observed information with F
-  //printrng(Hf,"Hf");
   // VectorXd vara = -Ha.inverse().diagonal();
   MatrixXd covF = -Hf.inverse()/nd;
   VectorXd varF = covF.diagonal();
-  //printrng(varF,"varF");
   if(any_nan(varF) || varF.minCoeff() < 0.){
     Rcpp::Rcout << "Bad values in varF!! Returning for diagnosis\n";
     return Rcpp::List::create(varF);
@@ -433,8 +426,7 @@ Rcpp::List fitdrm(Rcpp::NumericMatrix inY,Rcpp::NumericMatrix inX,
   // which is simply the sum of F's covariance matrix
   for(int j=0;j<D.q;j++){
     MatrixXd TT = HF.array()*(u1.col(j)*u1.col(j).transpose()).array();
-    double tmp = HF.sum() + D.U(D.m-1,j)*D.U(D.m-1,j)*f_sum; // NEEDS FIXING!!! more covariance conundrums!
-    Rcpp::Rcout << "adding " << tmp << " to b0sd at index " << j << std::endl;
+    double tmp = HF.sum() + D.U(D.m-1,j)*D.U(D.m-1,j)*f_sum; // NEEDS FIXING! more covariance conundrums
     b0sd(j) = tmp;
   }
   if(any_nan(b0sd) || b0sd.minCoeff() <= 0){

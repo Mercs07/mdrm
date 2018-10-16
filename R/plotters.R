@@ -21,18 +21,24 @@ setMethod(f = "plot", signature = "DRM_",
             if(ncol(x@Y)>2){stop("Sorry, plotting is defined only for univariate or bivariate outcomes.")}
             if(ncol(x@Y) == 1){
               m = NROW(x@U)
-              fh = x@Fhat[1:(m-1)]
-              th_f = c(fh,c(x@beta[-1])) # exclude intercept since it isn't an independent parameter
-              HF0 = drmHess(th_f,x@X,x@Y,TRUE) # this should be calculated @ model fit
-              IF = -solve(HF0)
-              sU = sort(x@U)
-              cumV = unlist(lapply(1:m,function(j){
-                inMat = which(x@U <= sU[j])
-                sum(IF[inMat,inMat])
-              }))
-              cumSD = sqrt(cumV)*qnorm(0.975)/sqrt(nrow(x@X))
-              ordF = x@Fhat[order(x@U[,1])]
-              cF = cumsum(ordF)
+              p = m-1 # number of independent parameters
+              fh = x@Fhat[1:p]
+              fcov = matrix(0,nrow=m,ncol=m)
+              fcov[1:p,1:p] = vcov(x)[1:p,1:p]
+              fcov[,m] = -rowSums(fcov) # of course, this matrix is not full rank
+              fcov[m,] = fcov[,m]
+              fcov[m,m] = sum(fcov[1:p,1:p])
+              plot(colSums(fcov))
+              
+              sU = sort(x@U[,1])
+              sF = x@Fhat[order(x@U[,1])]
+              fsd = sapply(1:m,function(j){
+                ix = which(x@U <= sU[j])
+                sum(fcov[ix,ix])
+              })
+              
+              cumSD = sqrt(pmax(fsd,0))*qnorm(0.975)
+              cF = cumsum(sF)
               YL = c(min(cF-cumSD),max(cF+cumSD))
               op = par(no.readonly = TRUE); on.exit(par(op))
               par(mar=c(3,3.25,3,1),mgp = c(1.75,0.5,0),tcl = -0.33)
@@ -49,12 +55,6 @@ setMethod(f = "plot", signature = "DRM_",
               par(mar = c(2,2,1,1),mgp = c(3,0.67,0))
               image(x = Ugrid$ux,y = Ugrid$uy,z = Ugrid$cdf,
                     col = viridis::viridis(40),las = 1)
-              # levelplot(gridU[,3]~gridU[,1]*gridU[,2],pretty = FALSE,contour = TRUE,
-              #           at = 0:10/10,col.regions = genRCB(colorScheme,100),
-              #           xlab = colnames(x@U)[1],ylab = colnames(x@U)[2],
-              #           main="Estimated Baseline Distribution",
-              #           colorkey = list(space = "right",at = contour_percentiles,
-              #                           labels = as.character(contour_percentiles)))
             }
             invisible()
           })
