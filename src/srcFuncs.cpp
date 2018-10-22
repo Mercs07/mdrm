@@ -76,21 +76,6 @@ public:
   MatrixXd scores(VecRef) const; // n x nParam matrix of scores for use in multiplier bootstrap test.  Their colwise sum should equal the gradient
 };
 
-// one global class member for Brent method
-static mdrm G;
-
-// wrappers for Brent method
-double drmLL(VecRef theta){
-  if(!G.initialized) Rcpp::stop("Attempt to call drmLL without initializing G");
-  return G(theta);
-}
-
-VectorXd drmGrad(VecRef theta){
-  VectorXd res(theta.size());
-  G.df(theta,res);
-  return res;
-}
-
 void mdrm::df(VecRef th,Eigen::Ref<Eigen::VectorXd> gg) const { // negative gradient, scaled by sample size
   if(gg.size() != nParam){gg.resize(nParam);}
   const MatrixXd XB( X*unVectorize(th.tail(p*q),q) );
@@ -345,34 +330,28 @@ VectorXd beta0(const mdrm& D){
   MatrixXd X1(D.n,D.p+1); // initial estimate needs X and a column of ones
   X1.col(0) = VectorXd::Constant(D.n,1.0);  // intercept
   X1.rightCols(D.p) = D.X;
-  MatrixXd bhat( betaFit(D.Y,X1).bottomRows(D.p) ); // remove intercept row
-  double maxAbs = std::max(-bhat.minCoeff(),bhat.maxCoeff());
-  if(maxAbs > 2.) bhat *= 2./maxAbs; // scale betas to within (-1,1)
+  MatrixXd bhat{ betaFit(D.Y,X1).bottomRows(D.p) }; // remove intercept row
+  double maxAbs = bhat.array().abs().maxCoeff();
+  if(maxAbs > 2.) bhat *= 2./maxAbs; // betas capped at |2|
   if(D.verbosity > 1){ Rcpp::Rcout << "The initial betas:\n" << bhat << std::endl; }
   return vectorize(bhat);
 }
 
 //[[Rcpp::export]]
-Rcpp::List fitdrm(Rcpp::NumericMatrix inY,Rcpp::NumericMatrix inX,
-                  double TOL = 0.,int MAXIT = 100,int verb = 0,double maxStep=10.,
-                  bool justBeta=false, const std::string method = "Brent"){
+Rcpp::List fitdrm(Rcpp::NumericMatrix inY,Rcpp::NumericMatrix inX,Rcpp::IntegerVector zero_index,
+  double TOL = 0.,int MAXIT = 100,int verb = 0,const std::string method = "Brent",bool justBeta = false){
   using namespace Eigen;
-  const Map<MatrixXd> X(Rcpp::as<Map<MatrixXd>>(inX)), Y(Rcpp::as<Map<MatrixXd>>(inY));
+  const MapMxd X(Rcpp::as<MapMxd>(inX));
+  const MapMxd Y(Rcpp::as<MapMxd>(inY));
+  const MapVxi zc(Rcpp::as<MapVxi>(zero_index));
   const mdrm D(X,Y,verb);
   VectorXd theta0(D.nParam);
   theta0.head(D.m - 1) = 0.5*ArrayXd::Random(D.m - 1); // randomly initialized alpha in (-0.5, 0.5) range.
   theta0.tail(D.p*D.q) = beta0(D); // initialize beta to linear approximation
   if(TOL < 1.0e-10) TOL = 1.0e-5*sqrt(D.nParam); // though TOL has a default, it's interpretation is different for the two methods
   funcMin opt_param;
-  if(method=="Brent"){
-    G.init(X,Y,verb);
-  }
   try{
-    if(method=="Brent"){
-      opt_param = dfpmin(theta0,drmLL,drmGrad,TOL,verb);
-    } else {
-      opt_param = dfpmin(theta0,D,TOL,verb,VectorXi::Constant(1,-1));
-    }
+   opt_param = dfpmin(theta0,D,zc,method,verb,TOL,TOL);
   } catch(std::exception& _ex_){
     forward_exception_to_r(_ex_);  // hmm, forward_exception_to_r is defined within Rcpp but isn't in Rcpp namespace.
   } catch(std::string errMsg){
@@ -458,22 +437,26 @@ Rcpp::List fitdrm(Rcpp::NumericMatrix inY,Rcpp::NumericMatrix inX,
 
 
 //[[Rcpp::export]]
-Rcpp::List drmBoot(Rcpp::NumericMatrix y,Rcpp::NumericMatrix x,int nBoot,double TOL=0,int MAXIT = 100,
-                   int verb = 0,std::string method="Brent"){
+Rcpp::List drmBoot(Rcpp::NumericMatrix y,Rcpp::NumericMatrix x,int nBoot,Rcpp::IntegerVector zero_index,
+  double TOL=0,int MAXIT = 100,int verb = 0,std::string method="Brent"){
   
   using namespace Eigen;
   const MapMxd Y(Rcpp::as<MapMxd>(y));
   const MapMxd X(Rcpp::as<MapMxd>(x));
+  MapVxi zc(Rcpp::as<MapVxi>(zero_index));
   const mdrm D(X,Y,verb);
+  if(nBoot < 2) Rcpp::stop("Invalid nBoot argument");
+  if(Rcpp::min(zero_index) < -1 || Rcpp::max(zero_index) >= D.p*D.q) Rcpp::stop("Invalid beta parameter indices to zero out");
+  if(zc.maxCoeff() > -1) zc += VectorXi::Constant(zc.size(),D.m-1); // shift args to zero out up to beta position *if* we actually want to zero any
   VectorXd theta0 = 0.5*VectorXd::Random(D.nParam);
   theta0.tail(D.p*D.q) = beta0(D); // initialize beta to linear approximation
   if(TOL < 1.0e-10) TOL = 1.0e-5*sqrt(D.nParam); // converge criterion defaults to a reasonable level but can be passed as a param (min. is 1^-10)
   int btry = 0,bdid = 0;
-  G.init(X,Y,verb); // use Brent method for initial fit just to get parameters in neighborhood
-  funcMin res = dfpmin(theta0,drmLL,drmGrad,1.e-4,verb);
+  
+  funcMin res = dfpmin(theta0,D,zc,"Brent",0,1.e-4,1.e-4);
   theta0 = res.arg_min;
   // save the initial fit to use as a good initial value for re-fitting the data
-  const VectorXd initTh = theta0;
+  const VectorXd initTh{ theta0 };
   VectorXi rs(D.n); // resampling index
   MatrixXd XB(D.n,D.p), YB(D.n,D.q), tbeta(D.p,D.q), tcov(D.q,D.q), yh(D.n,D.q);
   Rcpp::List bHats(nBoot), sigHats(nBoot);
@@ -488,22 +471,17 @@ Rcpp::List drmBoot(Rcpp::NumericMatrix y,Rcpp::NumericMatrix x,int nBoot,double 
       YB.row(i) = Y.row(rs(i));
     }
     mdrm db(XB,YB,verb);
-    if(method == "Brent"){
-      G.init(XB,YB,verb);
-      res = dfpmin(initTh,drmLL,drmGrad,TOL,verb);
-      theta0 = res.arg_min;
-      OKfit = true;
-    } else {
-      theta0 = initTh; // re-set since it will get changed at each instance
-      try{
-        res = dfpmin(theta0,D,TOL,verb,VectorXi::Constant(1,-1));
-        OKfit = true;
-      } catch(const char* errMsg){
-        Rcpp::Rcout << "Exception during bootstrap: " << errMsg << std::endl;
-        continue;
-      } catch(...){
-        continue;
-      }
+    try{
+      funcMin resB = dfpmin(theta0,D,zc,method,verb,TOL,TOL);
+      theta0 = resB.arg_min;
+    } catch(std::exception& _ex_){
+      forward_exception_to_r(_ex_);  // hmm, forward_exception_to_r is defined within Rcpp but isn't in Rcpp namespace.
+    } catch(std::string errMsg){
+      Rcpp::stop(errMsg);
+    } catch(const char* errMsg){
+      Rcpp::stop(errMsg);
+    } catch(...){
+      ::Rf_error("c++ exception (unknown reason!)");
     }
     if(OKfit){
       yh = db.yhat(theta0);
@@ -511,7 +489,10 @@ Rcpp::List drmBoot(Rcpp::NumericMatrix y,Rcpp::NumericMatrix x,int nBoot,double 
       sigHats[bdid++] = cov(db.Y - yh);	
     }
   }
-  return Rcpp::List::create(Rcpp::Named("betas") = bHats,Rcpp::Named("sigmas") = sigHats);
+  return Rcpp::List::create(
+    Rcpp::Named("betas") = bHats,
+    Rcpp::Named("sigmas") = sigHats
+  );
 }
 
 

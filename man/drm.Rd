@@ -26,6 +26,9 @@ Otherwise, we directly compare the Euclidean norm of the gradient to \code{tol}.
 \code{verbosity}, controlling diagnostic output shown during model fitting (higher gives more output and zero gives none);
 \code{maxStep}, a parameter passed to the line search algorithm which may be shrunk 
 \code{justBeta}, indicating whether to only fit a point estimate
+\code{zero_index}, an optional (column-major) vector of indices of beta to fix at zero when fitting.
+This may be useful for fitting a model under a null hypothesis. Naturally the elements of this vector
+must be between 1 and the dimension of the \eqn{\beta} matrix.
 \code{method}, if "Brent", uses Brent's method to find a suitable objective function decrease in the current search direction.
 Otherwise, uses a cubic approximation to fulfill the Wolfe conditions. Both methods use the BFGS Quasi-Newton algorithm to pick
 candidate directions. The 'Brent' method seems to be a little more stable for this problem, but both should yield the same estimates.

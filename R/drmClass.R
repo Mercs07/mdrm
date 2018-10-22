@@ -7,27 +7,32 @@
 # parse optional arguments list and return a list with any defaults substituted for passed-in values
 parseDots = function(lst){
   defaults = list("tol" = 1.e-5,"maxit" = 150, "verbosity" = 0,
-                  "maxstep" = 10,"justbeta" = FALSE, "method" = "Brent")
+                  "maxstep" = 10,"justbeta" = FALSE, "method" = "Brent",
+                  "zero_index" = -1L)
   lst = lst[!sapply(lst,is.null)] # avoid 'if arg. of length zero' error
   if(length(lst)==0) return(defaults)
-  if(max(lengths(lst))>1) stop("drm: options list should contain only length-1 vectors.")
+
   selected = defaults
-  modes = c("numeric","integer","integer","numeric","logical","character")
+  modes = c("numeric","integer","integer","numeric","logical","character","integer")
   names(lst) = tolower(names(lst))
-  matchOpt = match(names(lst),names(defaults),NA)
+  matchOpt = pmatch(names(lst),names(defaults),nomatch = NA_integer_,duplicates.ok = FALSE)
   if(length(matchOpt)){
     for(i in 1:length(matchOpt)){
       if(!is.na(matchOpt[i])){
         modei = match.fun(paste0("as.",modes[matchOpt[i]]))
-        selected[matchOpt[i]] = modei(lst[i])  # setting user-defined options for C++ algorithm  
+        selected[[matchOpt[i]]] = modei(lst[[i]])  # setting user-defined options for C++ algorithm  
       }
     }
   }
-  if(selected[['tol']] < 1.0e-10 || 
+  if(any(is.na(selected)) ||
+     selected[['tol']] < 1.0e-10 || 
      selected[['maxit']] <= 1 || 
-     selected[['maxstep']] < 1.e-10 ||
-     any(is.na(selected))){
+     selected[['maxstep']] < 1.e-10){
     stop("Bad options passed in fitOptions. Ensure TOL, maxit, and maxStep are positive.")
+  }
+  lln = lengths(selected)
+  if(length(setdiff(names(which(lln > 1)),"zero_index"))){ # what a roundabout test!
+    stop("All options except zero_index must be of length 1")
   }
   selected
 }
@@ -55,6 +60,9 @@ parseDots = function(lst){
 #' \code{verbosity}, controlling diagnostic output shown during model fitting (higher gives more output and zero gives none);
 #' \code{maxStep}, a parameter passed to the line search algorithm which may be shrunk 
 #' \code{justBeta}, indicating whether to only fit a point estimate
+#' \code{zero_index}, an optional (column-major) vector of indices of beta to fix at zero when fitting.
+#' This may be useful for fitting a model under a null hypothesis. Naturally the elements of this vector
+#' must be between 1 and the dimension of the \eqn{\beta} matrix.
 #' \code{method}, if "Brent", uses Brent's method to find a suitable objective function decrease in the current search direction.
 #' Otherwise, uses a cubic approximation to fulfill the Wolfe conditions. Both methods use the BFGS Quasi-Newton algorithm to pick
 #' candidate directions. The 'Brent' method seems to be a little more stable for this problem, but both should yield the same estimates.
@@ -87,8 +95,9 @@ drm = function(formula,data,subset,na.action,contrasts=NULL,fitOptions=list()){
 	if(is.null(colnames(xx))){ colnames(xx) = paste0("X",1:ncol(xx)) }
   defOpt = parseDots(fitOptions)
 	Obj = DRM_(X = xx, Y = yy)  # instantiate class member
-	res = fitdrm(Obj@Y,Obj@X,TOL=defOpt$tol,MAXIT=defOpt$maxit,verb=defOpt$verbosity,maxStep=defOpt$maxstep,
-		justBeta = defOpt$justbeta,method = defOpt$method)  # "internal" fitting function
+	res = fitdrm(Obj@Y,Obj@X,zero_index = defOpt$zero_index,TOL = defOpt$tol,
+	             MAXIT = defOpt$maxit,verb = defOpt$verbosity,method = defOpt$method,
+	             justBeta = defOpt$justbeta)  # "internal" fitting function
 	if(length(res) == 1L){
 		stop("An error occurred in model fitting. Perhaps re-scale the data or try exporing fitOptions.")
 	}

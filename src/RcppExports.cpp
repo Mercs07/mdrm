@@ -87,37 +87,38 @@ BEGIN_RCPP
 END_RCPP
 }
 // fitdrm
-Rcpp::List fitdrm(Rcpp::NumericMatrix Y, Rcpp::NumericMatrix X, double TOL, int MAXIT, int verb, double maxStep, bool justBeta, std::string method);
-RcppExport SEXP _mdrm_fitdrm(SEXP YSEXP, SEXP XSEXP, SEXP TOLSEXP, SEXP MAXITSEXP, SEXP verbSEXP, SEXP maxStepSEXP, SEXP justBetaSEXP, SEXP methodSEXP) {
+Rcpp::List fitdrm(Rcpp::NumericMatrix inY, Rcpp::NumericMatrix inX, Rcpp::IntegerVector zero_index, double TOL, int MAXIT, int verb, const std::string method, bool justBeta);
+RcppExport SEXP _mdrm_fitdrm(SEXP inYSEXP, SEXP inXSEXP, SEXP zero_indexSEXP, SEXP TOLSEXP, SEXP MAXITSEXP, SEXP verbSEXP, SEXP methodSEXP, SEXP justBetaSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type Y(YSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type inY(inYSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type inX(inXSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type zero_index(zero_indexSEXP);
     Rcpp::traits::input_parameter< double >::type TOL(TOLSEXP);
     Rcpp::traits::input_parameter< int >::type MAXIT(MAXITSEXP);
     Rcpp::traits::input_parameter< int >::type verb(verbSEXP);
-    Rcpp::traits::input_parameter< double >::type maxStep(maxStepSEXP);
+    Rcpp::traits::input_parameter< const std::string >::type method(methodSEXP);
     Rcpp::traits::input_parameter< bool >::type justBeta(justBetaSEXP);
-    Rcpp::traits::input_parameter< std::string >::type method(methodSEXP);
-    rcpp_result_gen = Rcpp::wrap(fitdrm(Y, X, TOL, MAXIT, verb, maxStep, justBeta, method));
+    rcpp_result_gen = Rcpp::wrap(fitdrm(inY, inX, zero_index, TOL, MAXIT, verb, method, justBeta));
     return rcpp_result_gen;
 END_RCPP
 }
 // drmBoot
-Rcpp::List drmBoot(Rcpp::NumericMatrix y, Rcpp::NumericMatrix x, int nBoot, double TOL, int MAXIT, int verb, std::string method);
-RcppExport SEXP _mdrm_drmBoot(SEXP ySEXP, SEXP xSEXP, SEXP nBootSEXP, SEXP TOLSEXP, SEXP MAXITSEXP, SEXP verbSEXP, SEXP methodSEXP) {
+Rcpp::List drmBoot(Rcpp::NumericMatrix y, Rcpp::NumericMatrix x, int nBoot, Rcpp::IntegerVector zero_index, double TOL, int MAXIT, int verb, std::string method);
+RcppExport SEXP _mdrm_drmBoot(SEXP ySEXP, SEXP xSEXP, SEXP nBootSEXP, SEXP zero_indexSEXP, SEXP TOLSEXP, SEXP MAXITSEXP, SEXP verbSEXP, SEXP methodSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type y(ySEXP);
     Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type x(xSEXP);
     Rcpp::traits::input_parameter< int >::type nBoot(nBootSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type zero_index(zero_indexSEXP);
     Rcpp::traits::input_parameter< double >::type TOL(TOLSEXP);
     Rcpp::traits::input_parameter< int >::type MAXIT(MAXITSEXP);
     Rcpp::traits::input_parameter< int >::type verb(verbSEXP);
     Rcpp::traits::input_parameter< std::string >::type method(methodSEXP);
-    rcpp_result_gen = Rcpp::wrap(drmBoot(y, x, nBoot, TOL, MAXIT, verb, method));
+    rcpp_result_gen = Rcpp::wrap(drmBoot(y, x, nBoot, zero_index, TOL, MAXIT, verb, method));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -130,7 +131,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_mdrm_gradF", (DL_FUNC) &_mdrm_gradF, 3},
     {"_mdrm_drmHess", (DL_FUNC) &_mdrm_drmHess, 4},
     {"_mdrm_fitdrm", (DL_FUNC) &_mdrm_fitdrm, 8},
-    {"_mdrm_drmBoot", (DL_FUNC) &_mdrm_drmBoot, 7},
+    {"_mdrm_drmBoot", (DL_FUNC) &_mdrm_drmBoot, 8},
     {NULL, NULL, 0}
 };
 

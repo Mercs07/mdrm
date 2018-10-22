@@ -25,11 +25,11 @@ drmHess <- function(th, X, Y, useF = TRUE) {
     .Call('_mdrm_drmHess', PACKAGE = 'mdrm', th, X, Y, useF)
 }
 
-fitdrm <- function(Y, X, TOL = 0., MAXIT = 100L, verb = 0L, maxStep = 10., justBeta = FALSE, method = "Brent") {
-    .Call('_mdrm_fitdrm', PACKAGE = 'mdrm', Y, X, TOL, MAXIT, verb, maxStep, justBeta, method)
+fitdrm <- function(inY, inX, zero_index, TOL = 0., MAXIT = 100L, verb = 0L, method = "Brent", justBeta = FALSE) {
+    .Call('_mdrm_fitdrm', PACKAGE = 'mdrm', inY, inX, zero_index, TOL, MAXIT, verb, method, justBeta)
 }
 
-drmBoot <- function(y, x, nBoot, TOL = 0, MAXIT = 100L, verb = 0L, method = "Brent") {
-    .Call('_mdrm_drmBoot', PACKAGE = 'mdrm', y, x, nBoot, TOL, MAXIT, verb, method)
+drmBoot <- function(y, x, nBoot, zero_index, TOL = 0, MAXIT = 100L, verb = 0L, method = "Brent") {
+    .Call('_mdrm_drmBoot', PACKAGE = 'mdrm', y, x, nBoot, zero_index, TOL, MAXIT, verb, method)
 }
 
