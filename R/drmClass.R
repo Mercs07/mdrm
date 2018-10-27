@@ -8,7 +8,7 @@
 parseDots = function(lst){
   defaults = list("tol" = 1.e-5,"maxit" = 150, "verbosity" = 0,
                   "maxstep" = 10,"justbeta" = FALSE, "method" = "Brent",
-                  "zero_index" = -1L)
+                  "zero_index" = 0L)
   lst = lst[!sapply(lst,is.null)] # avoid 'if arg. of length zero' error
   if(length(lst)==0) return(defaults)
 
@@ -50,7 +50,6 @@ parseDots = function(lst){
 #' @param formula  A formula specifying the response and predictors, in the same manner as \code{lm}, \code{glm}, etc.
 #' @param data  A data frame from which to extract the variables indicated in the formula
 #' @param subset optional parameter for subsetting the data in argument \code{data}, following \code{lm} or \code{glm}
-#' @param na.action What to do with missing values. See correponding documentation for \code{glm} (or \code{model.frame})
 #' @param contrasts Optional argument specifying contrasts for factor covariates. See documentation for \code{stats::model.matrix}
 #' @param fitOptions An optional named list which may be populated with control parameters. Named members may include:
 #' \code{tol}, the convergence criterion. This means slightly different things depending on whether \code{method="Brent"} or not.
@@ -60,9 +59,9 @@ parseDots = function(lst){
 #' \code{verbosity}, controlling diagnostic output shown during model fitting (higher gives more output and zero gives none);
 #' \code{maxStep}, a parameter passed to the line search algorithm which may be shrunk 
 #' \code{justBeta}, indicating whether to only fit a point estimate
-#' \code{zero_index}, an optional (column-major) vector of indices of beta to fix at zero when fitting.
-#' This may be useful for fitting a model under a null hypothesis. Naturally the elements of this vector
-#' must be between 1 and the dimension of the \eqn{\beta} matrix.
+#' \code{zero_index}, an optional (column-major) vector of indices of beta coefficients to fix at zero when fitting.
+#' This may be useful for fitting a model under a null hypothesis, esp. with multivariate data. Since the intercept is not an independent
+#' parameter in this model, intercept parameter(s) cannot be fixed at zero in this way.
 #' \code{method}, if "Brent", uses Brent's method to find a suitable objective function decrease in the current search direction.
 #' Otherwise, uses a cubic approximation to fulfill the Wolfe conditions. Both methods use the BFGS Quasi-Newton algorithm to pick
 #' candidate directions. The 'Brent' method seems to be a little more stable for this problem, but both should yield the same estimates.
@@ -74,10 +73,10 @@ parseDots = function(lst){
 #' 
 #' @seealso \code{\link[mdrm:summary-DRM_-method]{summary}}, \code{\link[mdrm:plot-DRM_-method]{plot}}, \code{\link[mdrm:names-DRM_-method]{names}}
 #' @export
-drm = function(formula,data,subset,na.action,contrasts=NULL,fitOptions=list()){
+drm = function(formula,data,subset,contrasts=NULL,fitOptions=list()){
   cl = match.call()   # this one is just used to return the call along with the model summary
   mf = match.call(expand.dots = FALSE)
-  m = match(c("formula", "data", "subset", "na.action"), names(mf), 0L)  # unlike lm(), no offset or weights!
+  m = match(c("formula", "data", "subset"), names(mf), 0L)  # unlike lm(), no offset, weights, or na.action
   mf = mf[c(1L, m)]
   mf$drop.unused.levels = TRUE
   mf$na.action = "na.omit" # no method of dealing with missing values here
@@ -87,19 +86,20 @@ drm = function(formula,data,subset,na.action,contrasts=NULL,fitOptions=list()){
 	# for DRM, we exclude the intercept for the input model matrix, but use it when creating the model matrix so that factors
 	# have the usual baseline constrast interpretation. Non-standard setting of 'contrasts' argument could cause an issue here.
 	attr(mt,"intercept") = 1
-	if(is.empty.model(mt)){ stop("Cannot continue with an empty model: please check input formula.") }
+	if(is.empty.model(mt)){ stop("drm: Cannot continue with an empty model: please check input formula.") }
 	yy = as.matrix(model.response(mf, "numeric"))
 	if(is.null(colnames(yy))){ colnames(yy) = paste0("Y",1:ncol(yy)) }
 	xx = model.matrix(mt, mf, contrasts)
 	if("(Intercept)" %in% colnames(xx)) xx = xx[,-c(which(colnames(xx)=="(Intercept)"))]  # explicitly remove intercept
 	if(is.null(colnames(xx))){ colnames(xx) = paste0("X",1:ncol(xx)) }
-  defOpt = parseDots(fitOptions)
+	defOpt = parseDots(fitOptions)
+	if(any(is.na(defOpt$zero_index)) || min(defOpt$zero_index,na.rm=TRUE) < 0) stop("drm: Invalid zero indices")
 	Obj = DRM_(X = xx, Y = yy)  # instantiate class member
-	res = fitdrm(Obj@Y,Obj@X,zero_index = defOpt$zero_index,TOL = defOpt$tol,
+	res = fitdrm(Obj@Y,Obj@X,zero_index = defOpt$zero_index-1,TOL = defOpt$tol, # subtract 1 from zero_index for 0-based indexing in C++
 	             MAXIT = defOpt$maxit,verb = defOpt$verbosity,method = defOpt$method,
 	             justBeta = defOpt$justbeta)  # "internal" fitting function
 	if(length(res) == 1L){
-		stop("An error occurred in model fitting. Perhaps re-scale the data or try exporing fitOptions.")
+		stop("drm: An error occurred in model fitting. Perhaps re-scale the data or try exporing fitOptions.")
 	}
 	Obj@U = res$U
 	Obj@beta = rbind(res$b0,as.matrix(res$beta))
@@ -114,10 +114,14 @@ drm = function(formula,data,subset,na.action,contrasts=NULL,fitOptions=list()){
 	Obj@resid = res$resid
 	Obj@iterations = res$iterations
 	colnames(Obj@U) = colnames(Obj@Y)
-	Obj@p.value=2*(1-pnorm(abs(Obj@beta)/Obj@sdbeta))
+	Obj@p.value = 2*(1-pnorm(abs(Obj@beta)/Obj@sdbeta))
 	Obj@betaC = rbind(res$b0,res$beta%*%(cov(Obj@resid))) # intercept does not need scaling
 	Obj@user.call = cl
 	Obj@is_fitted = TRUE
+	nac = attr(mf,"na.action")
+	Obj@na_omit = if(is.null(nac)) 0L else length(nac)
+	zcs = defOpt$zero_index
+	Obj@zc = if(length(zcs)==1 && zcs[1]==-1) integer(0) else zcs # zero'ed out params display differently in print/summarize
 	return(Obj)
 }
 
@@ -144,7 +148,9 @@ DRM_ = setClass(Class = "DRM_",
 	          betaC = "matrix",
 	          user.call = "call",
 	          errMsg = "character",
-	          is_fitted = "logical"
+	          is_fitted = "logical",
+	          na_omit = "integer",
+			  zc = "integer"
 	),
 	prototype = list(preProcess = FALSE,conv = 1L,errMsg = "",is_fitted = FALSE),
 	validity = valDRM
@@ -362,22 +368,27 @@ makeLine = function(w,contents){
 setMethod(f = "summary", signature = "DRM_",
 	definition = function(object){
 		cFmt = "%.3f" # controls rounding
-		Q = NCOL(object@beta)
+		Q = NCOL(object@beta); P = NROW(object@beta)
 		nameSpacer = max(15,min(max(nchar(colnames(object@X))),25)) # name column is between 15 and 25 characters wide
-		pvalu = matrix(ifelse(object@p.value < 1.0e-6,"<1.0e-6",sprintf(cFmt,object@p.value)),ncol=Q)
+		pvalu = matrix(ifelse(object@p.value <= 5e-5,"<0.0001",sprintf("%.4f",object@p.value)),ncol=Q) # rounding of p-values needs extra TLC
 		sigs = matrix(sig_star(c(object@p.value)),ncol=Q)
 		zscores = matrix(sprintf(cFmt,object@beta/object@sdbeta),ncol=Q)
 		cat("Call:\n"); print(object@user.call)
 		cat("\nDensity ratio model fit:\n\nCoefficients:\n")
-		ww = c(nameSpacer+2,10,10,8,8)  # widths of each column in output table
+		ww = c(nameSpacer + 2,10,10,8,8)  # widths of each column in output table
 		cat(makeLine(ww,c("","Estimate","Std. Error","z value","Pr(>|z|)")))
 		Ynames = colnames(object@Y)
 		Xnames = c("Intercept",colnames(object@X))
 		for(j in seq_along(Ynames)){
 			cat(paste0("\nOutcome: ",Ynames[j],"\n"))
 			for(i in seq_along(Xnames)){
-				cat(makeLine(ww,c(Xnames[i],sprintf(cFmt,object@beta[i,j]),sprintf(cFmt,object@sdbeta[i,j]),zscores[i,j],pvalu[i,j])))
-				cat(paste0("  ",sigs[i,j],"\n")) # significance codes
+				zix = P*(j-1) + i - j
+				if(zix %in% object@zc){
+					cat(makeLine(ww,c(Xnames[i],"0","N/A","N/A","N/A")));cat('\n') # fixed parameter has no associated inference
+				} else {
+					cat(makeLine(ww,c(Xnames[i],sprintf(cFmt,object@beta[i,j]),sprintf(cFmt,object@sdbeta[i,j]),zscores[i,j],pvalu[i,j])))
+					cat(paste0("  ",sigs[i,j],"\n")) # significance codes
+				}
 			}
 			cat("\n")
 		}
@@ -386,7 +397,8 @@ setMethod(f = "summary", signature = "DRM_",
 		prmatrix(format(rcov,digits = 3),rowlab=rep('',NROW(rcov)),collab = rep('',NCOL(rcov)),
 		         quote = FALSE)
 		cat("\n\nLog-likelihood:",sprintf(cFmt,logLik(object)))
-		cat("\n# of parameters in model:",Q*NROW(object@beta) + NROW(object@U) - 1,"\n")
+		cat("\n# of parameters in model:",Q*NROW(object@beta) + NROW(object@U) - 1 - sum(object@zc > 0),"\n")
+		if(object@na_omit > 0) cat("\n(",object@na_omit," observations removed due to missingness)\n\n",sep="")
 	})
 
 #' Likelihood ratio test
@@ -456,7 +468,6 @@ drm_loglik = function(oo,tstB){
 #' @param formula Model formula specifying response(s) and covariates
 #' @param data See corresponding documentation for \code{\link{drm}}
 #' @param subset See corresponding documentation for \code{\link{drm}}
-#' @param na.action  See corresponding documentation for \code{\link{drm}}
 #' @param B number of bootstrap replications
 #' @param summarize Should this function return the entire length-\code{B} sequences of fitted \eqn{\hat{\beta}}{\beta} and \eqn{\hat{\Sigma}}{\Sigma}, or just the empirical standard deviation of \eqn{\beta\Sigma}?
 #' @param contrasts See corresponding documentation for \code{\link{drm}}
@@ -465,28 +476,30 @@ drm_loglik = function(oo,tstB){
 #' @seealso \code{\link{drm}}
 #' @rdname drmBootstrap-method
 #' @export
-drmBootstrap = function(formula,data,subset,na.action,B,summarize = FALSE,
+drmBootstrap = function(formula,data,subset,B,summarize = FALSE,
                         contrasts = NULL,fitOptions = list()){
   mf = match.call(expand.dots = FALSE)
-  m = match(c("formula", "data", "subset", "na.action"), names(mf), 0L)  # unlike lm(), no offset or weights!
+  m = match(c("formula", "data", "subset"), names(mf), 0L)
   mf = mf[c(1L, m)]
   mf$drop.unused.levels = TRUE
+  mf$na.action = "na.omit"
   mf[[1L]] = quote(stats::model.frame)
-  mf = eval(mf, parent.frame())
-	mt = attr(mf, "terms")
-	if(is.empty.model(mt)){ stop("Cannot continue with an empty model: please check input formula.") }
-	yy = as.matrix(model.response(mf, "numeric"))
-	xx = model.matrix(mt, mf, contrasts)
-	defOpt = parseDots(fitOptions)
-	B = as.integer(B)[1L]
-	if(is.na(B) || B <= 1L) stop("Number of bootstrap samples should exceed 1")
-	res = drmBoot(yy,xx,B,defOpt$tol,defOpt$maxit,
-	              defOpt$verbosity,defOpt$method)
-	if(isTRUE(summarize)){
-		Q = NCOL(res$betas[[1]])
-		bAdj = sapply(1:B,FUN = function(i){res$betas[[i]]%*%res$sigmas[[i]]})
-		bsd = apply(bAdj,1,sd)
-		return(matrix(bsd,ncol = Q,byrow = FALSE))
-	}
-	res # return the lists if we don't summarize
+  mf = eval(mf,parent.frame())
+  mt = attr(mf,"terms")
+  if(is.empty.model(mt)){ stop("drmBootstrap: Cannot continue with an empty model: please check input formula.") }
+  yy = as.matrix(model.response(mf,"numeric"))
+  xx = model.matrix(mt, mf, contrasts)
+  defOpt = parseDots(fitOptions)
+  if(any(is.na(defOpt$zero_index)) || min(defOpt$zero_index,na.rm=TRUE) < 0) stop("Invalid zero indices")
+  B = as.integer(B)[1L]
+  if(is.na(B) || !length(B) || B <= 1L) stop("drmBootstrap: Number of bootstrap samples should exceed 1")
+  res = drmBoot(yy,xx,B,zero_index = defOpt$zero_index-1,defOpt$tol,
+		defOpt$maxit,defOpt$verbosity,defOpt$method)
+  if(isTRUE(summarize)){
+	Q = NCOL(res$betas[[1]])
+	bAdj = sapply(1:B,FUN = function(i){res$betas[[i]]%*%res$sigmas[[i]]})
+	bsd = apply(bAdj,1,sd)
+	return(matrix(bsd,ncol = Q,byrow = FALSE))
+  }
+  res # return the lists if we don't summarize
 }

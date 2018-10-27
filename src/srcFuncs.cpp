@@ -7,7 +7,6 @@
 #include "util.h" // some helper functions
 #include "linemins.h" // two line search methods; prefer using "Brent" for stability
 
-using Rcpp::Named;
 using namespace Eigen;
 
 using MapVxi = Eigen::Map<Eigen::VectorXi>;
@@ -29,7 +28,8 @@ public:
   int verbosity;  // keep order of declaration consistent with order in constructor initializer list
   VectorXd uc;    // counts of unique values
   VectorXi Uinx;
-  mdrm(){ initialized = false; } // this constructor used in conjunction with Brent method
+  mdrm() = delete;
+
   mdrm(MatRef xx,MatRef yy,int verb) : X(xx), Y(yy), verbosity(verb){
     n = X.rows();
     p = X.cols();
@@ -41,20 +41,9 @@ public:
     m = U.rows();
     uc = uy.cast<double>();
     nParam = p*q + m - 1;
-    initialized = true; // not really needed here since this is used with void dfpmin() version
-  }
-  void init(MatrixXd xx,MatrixXd yy,int verb = 0){  // fake constructor pairing with the stub above
-    X = xx; Y = yy;
-    n = X.rows(); p = X.cols(); q = Y.cols();
-    VectorXi uy(n);
-    Uinx = VectorXi(n);
-    U = uniq(Y,uy,Uinx);
-    m = U.rows();
-    uc = uy.cast<double>();
-    nParam = p*q + m - 1;
     initialized = true;
-    verbosity = verb;
   }
+
   double operator()(VecRef th) const { // negative log-likelihood, scaled by sample size
     const MatrixXd XB( X*unVectorize(th.tail(p*q),q) );
     VectorXd alp(m);
@@ -116,7 +105,7 @@ VectorXd mdrm::gradF(VecRef th) const { // gradient with respect to F, for testi
   return res/n;
 }
 
-MatrixXd mdrm::scores(VecRef th) const { // the only wrinkle here is that we need to match up elements of Y with their respective elements in U
+MatrixXd mdrm::scores(VecRef th) const { // work in progress
   const MatrixXd XB( X*unVectorize(th.tail(p*q),q) );
   VectorXd alp(m);
   alp.head(m-1) = th.head(m-1); alp(m-1) = 0.;
@@ -340,18 +329,22 @@ VectorXd beta0(const mdrm& D){
 //[[Rcpp::export]]
 Rcpp::List fitdrm(Rcpp::NumericMatrix inY,Rcpp::NumericMatrix inX,Rcpp::IntegerVector zero_index,
   double TOL = 0.,int MAXIT = 100,int verb = 0,const std::string method = "Brent",bool justBeta = false){
-  using namespace Eigen;
+  using Rcpp::Named;
   const MapMxd X(Rcpp::as<MapMxd>(inX));
   const MapMxd Y(Rcpp::as<MapMxd>(inY));
-  const MapVxi zc(Rcpp::as<MapVxi>(zero_index));
+  MapVxi zc(Rcpp::as<MapVxi>(zero_index));
   const mdrm D(X,Y,verb);
   VectorXd theta0(D.nParam);
   theta0.head(D.m - 1) = 0.5*ArrayXd::Random(D.m - 1); // randomly initialized alpha in (-0.5, 0.5) range.
   theta0.tail(D.p*D.q) = beta0(D); // initialize beta to linear approximation
   if(TOL < 1.0e-10) TOL = 1.0e-5*sqrt(D.nParam); // though TOL has a default, it's interpretation is different for the two methods
+  if(zc.maxCoeff() > -1){
+    zc += VectorXi::Constant(zc.size(),D.m-1); // shift args to zero out up to beta position *if* we actually want to zero any
+    if(verb > 0) Rcpp::Rcout << "Zero indices @ " << zc.transpose() << "; length of parameter vector is " << D.nParam << std::endl;
+  }
   funcMin opt_param;
-  try{
-   opt_param = dfpmin(theta0,D,zc,method,verb,TOL,TOL);
+  try {
+    opt_param = dfpmin(theta0,D,zc,method,verb,TOL,TOL);
   } catch(std::exception& _ex_){
     forward_exception_to_r(_ex_);  // hmm, forward_exception_to_r is defined within Rcpp but isn't in Rcpp namespace.
   } catch(std::string errMsg){
@@ -365,10 +358,10 @@ Rcpp::List fitdrm(Rcpp::NumericMatrix inY,Rcpp::NumericMatrix inX,Rcpp::IntegerV
   const MatrixXd resid = D.Y - D.yhat(theta0);
   VectorXd Fhat = A2F(theta0.head(D.m-1));
   MatrixXd betahat = unVectorize(theta0.tail(D.p*D.q),D.q);
-  // intercept
-  VectorXd b0 = D.U.transpose()*(Fhat*D.uc); // *weighted* product
+  
+  VectorXd b0 = D.U.transpose()*(Fhat*D.uc); // intercept
   VectorXd og(D.nParam);
-  D.df(theta0,og); // return gradient
+  D.df(theta0,og);
   if(justBeta){  // don't bother with calculating Hessian and standard errors
     return Rcpp::List::create(
       Named("beta") = Rcpp::wrap(betahat),
@@ -402,7 +395,7 @@ Rcpp::List fitdrm(Rcpp::NumericMatrix inY,Rcpp::NumericMatrix inX,Rcpp::IntegerV
   const VectorXd f_psum{HF.colwise().sum()}; // first part of covariance calculation
   const VectorXd f_adj{f_sum*Fhat.head(D.m-1)}; // second part of covariance calculations
   // the full m\times m covariance of F can be fortified with the differences f_psum - f_adj; this leaves the bottom right corner
-  // which is simply the sum of F's covariance matrix
+  // which is simply the sum of F's covariance matrix (and it is linearly dependent, naturally)
   for(int j=0;j<D.q;j++){
     MatrixXd TT = HF.array()*(u1.col(j)*u1.col(j).transpose()).array();
     double tmp = HF.sum() + D.U(D.m-1,j)*D.U(D.m-1,j)*f_sum; // NEEDS FIXING! more covariance conundrums
@@ -438,28 +431,29 @@ Rcpp::List fitdrm(Rcpp::NumericMatrix inY,Rcpp::NumericMatrix inX,Rcpp::IntegerV
 
 //[[Rcpp::export]]
 Rcpp::List drmBoot(Rcpp::NumericMatrix y,Rcpp::NumericMatrix x,int nBoot,Rcpp::IntegerVector zero_index,
-  double TOL=0,int MAXIT = 100,int verb = 0,std::string method="Brent"){
+  double TOL = 0,int MAXIT = 100,int verb = 0,std::string method="Brent"){
   
-  using namespace Eigen;
   const MapMxd Y(Rcpp::as<MapMxd>(y));
   const MapMxd X(Rcpp::as<MapMxd>(x));
-  MapVxi zc(Rcpp::as<MapVxi>(zero_index));
+  const MapVxi zc(Rcpp::as<MapVxi>(zero_index));
   const mdrm D(X,Y,verb);
   if(nBoot < 2) Rcpp::stop("Invalid nBoot argument");
-  if(Rcpp::min(zero_index) < -1 || Rcpp::max(zero_index) >= D.p*D.q) Rcpp::stop("Invalid beta parameter indices to zero out");
-  if(zc.maxCoeff() > -1) zc += VectorXi::Constant(zc.size(),D.m-1); // shift args to zero out up to beta position *if* we actually want to zero any
   VectorXd theta0 = 0.5*VectorXd::Random(D.nParam);
   theta0.tail(D.p*D.q) = beta0(D); // initialize beta to linear approximation
+  VectorXi zci(zc.size());
+  if(zc.maxCoeff() > -1) zci = zc + VectorXi::Constant(zc.size(),D.m-1); // shift args to zero out up to beta position *if* we actually want to zero any
+
   if(TOL < 1.0e-10) TOL = 1.0e-5*sqrt(D.nParam); // converge criterion defaults to a reasonable level but can be passed as a param (min. is 1^-10)
   int btry = 0,bdid = 0;
   
-  funcMin res = dfpmin(theta0,D,zc,"Brent",0,1.e-4,1.e-4);
+  funcMin res = dfpmin(theta0,D,zc,"Brent",0,1e-4,1e-4); // TOL need not be too tight here - this is just to get a good, reuseable beta estimate
   theta0 = res.arg_min;
-  // save the initial fit to use as a good initial value for re-fitting the data
-  const VectorXd initTh{ theta0 };
+
+  const VectorXd b0{ theta0.tail(D.p*D.q) };
   VectorXi rs(D.n); // resampling index
   MatrixXd XB(D.n,D.p), YB(D.n,D.q), tbeta(D.p,D.q), tcov(D.q,D.q), yh(D.n,D.q);
   Rcpp::List bHats(nBoot), sigHats(nBoot);
+  funcMin resB;
   bool OKfit;
   while(bdid < nBoot){ // don't flame out on the first exception; but if the error rate is too high, don't try forever
     btry++;
@@ -471,11 +465,14 @@ Rcpp::List drmBoot(Rcpp::NumericMatrix y,Rcpp::NumericMatrix x,int nBoot,Rcpp::I
       YB.row(i) = Y.row(rs(i));
     }
     mdrm db(XB,YB,verb);
+    if(zc.maxCoeff() > -1) zci = zc + VectorXi::Constant(zc.size(),db.m-1); // shift args to zero out up to beta position *if* we actually want to zero any
+    VectorXd th0 = 0.25*VectorXd::Random(db.nParam);
+    th0.tail(db.p*db.q) = b0;
     try{
-      funcMin resB = dfpmin(theta0,D,zc,method,verb,TOL,TOL);
-      theta0 = resB.arg_min;
+      resB = dfpmin(th0,db,zci,method,verb,TOL,TOL);
+      OKfit = true;
     } catch(std::exception& _ex_){
-      forward_exception_to_r(_ex_);  // hmm, forward_exception_to_r is defined within Rcpp but isn't in Rcpp namespace.
+      forward_exception_to_r(_ex_);
     } catch(std::string errMsg){
       Rcpp::stop(errMsg);
     } catch(const char* errMsg){
@@ -484,8 +481,9 @@ Rcpp::List drmBoot(Rcpp::NumericMatrix y,Rcpp::NumericMatrix x,int nBoot,Rcpp::I
       ::Rf_error("c++ exception (unknown reason!)");
     }
     if(OKfit){
-      yh = db.yhat(theta0);
-      bHats[bdid] = unVectorize(theta0.tail(D.p*D.q),D.q);
+      th0 = resB.arg_min;
+      yh = db.yhat(th0);
+      bHats[bdid] = unVectorize(th0.tail(db.p*db.q),db.q);
       sigHats[bdid++] = cov(db.Y - yh);	
     }
   }

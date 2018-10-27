@@ -20,6 +20,9 @@ using VecRef = const Eigen::Ref<const Eigen::VectorXd>&;
 // fit a model with some parameter(s) fixed at a certain value
 void setZeros(Eigen::Ref<Eigen::VectorXd>,const Eigen::Ref<const Eigen::VectorXi>&);
 
+// slight extension of above; not currently used
+void setValues(Eigen::Ref<Eigen::VectorXd> x,const Eigen::Ref<const Eigen::VectorXi>& ii,VecRef v);
+
 // test for infinite or NAN - this is typically a signal that something has gone horribly wrong in the optimization
 bool any_nan(VecRef x);
 
@@ -33,7 +36,6 @@ VectorXi sample(const int N,const int size);
  uniqCnt gets 'trimmed' at the end.
  */
 MatrixXd uniq(MatRef Y,VectorXi& uniqCnt,Eigen::Ref<Eigen::VectorXi> inxMap);
-
 
 template<int T> // T is -1 for Matrix (Eigen::Dynamic) or 1 (VectorXd) (or another constexpr)
 void printrng(Eigen::Matrix<double,Eigen::Dynamic,T>& M,const char* name){

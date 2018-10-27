@@ -47,14 +47,16 @@ setMethod(f = "plot", signature = "DRM_",
                    ylab = expression(hat(P)(Y<=y)),
                    xlab = if(is.null(colnames(x@Y))) "Y" else colnames(x@Y)[1],
                    main = "Baseline CDF (pointwise 95% C.I.)")
+              ytick = par('yaxp')
+              abline(h = seq(from=ytick[1],to=ytick[2],length.out=ytick[3]+1),lty="a5",col="#7f7e7e")
               polygon(x = c(sU,rev(sU)),y = c(cF-cumSD,rev(cF+cumSD)),
-                      col = scales::alpha(3,0.4))
-              abline(h = c(0,1),lty = 5)
+                      col = scales::alpha(3,0.5))
             } else { # two columns
               Ugrid = cdF(x@U,x@Fhat,0,TRUE)
-              par(mar = c(2,2,1,1),mgp = c(3,0.67,0))
+              par(mar = c(3.5,3.5,0,0),mgp = c(2.25,0.5,0),tcl=-0.33)
               image(x = Ugrid$ux,y = Ugrid$uy,z = Ugrid$cdf,
                     col = viridis::viridis(40),las = 1)
+              title(xlab = colnames(x@U)[1],ylab = colnames(x@U)[2])
             }
             invisible()
           })

@@ -17,9 +17,6 @@
 #include <sstream>
 #include <type_traits> // is_arithmetic
 
-using Rcpp::Rcout; // if not compiling with Rcpp, can substitute 'using std::cout = Rcout;'
-using std::endl;
-
 using VecRef = const Eigen::Ref<const Eigen::VectorXd>&;
 using MatRef = const Eigen::Ref<const Eigen::MatrixXd>&;
 using refVec = Eigen::Ref<Eigen::VectorXd>;
@@ -55,8 +52,6 @@ template<typename UnaryOp>
 void mnbrak(double *ax,double *bx,double *cx,double *fa,double *fb,double *fc,UnaryOp func){
   constexpr double GOLD = 1.618034, GLIMIT = 100., TINY = 1.0e-20;
   double ulim,u,r,q,fu,dum;
-  //*fa = (*func)(*ax);
-  //*fb = (*func)(*bx);
   *fa = func(*ax);
   *fb = func(*bx);
   if (*fb > *fa) {  // switch direction in this case
@@ -64,7 +59,6 @@ void mnbrak(double *ax,double *bx,double *cx,double *fa,double *fb,double *fc,Un
     SHIFT(dum,*fb,*fa,dum);
   }
   *cx = (*bx) + GOLD*(*bx - *ax);
-  //*fc = (*func)(*cx);
   *fc = func(*cx);
   while (*fb > *fc) { // potential for infinite loop is right here?
     r = (*bx - *ax)*(*fb - *fc);
@@ -72,7 +66,6 @@ void mnbrak(double *ax,double *bx,double *cx,double *fa,double *fb,double *fc,Un
     u = (*bx) - ((*bx - *cx)*q - (*bx - *ax)*r)/(2.0*SIGN(std::max(std::abs(q-r),TINY),q-r));
     ulim = (*bx) + GLIMIT*(*cx-*bx);
     if ((*bx-u)*(u-*cx) > 0.0){
-      //fu = (*func)(u);
       fu = func(u);
       if (fu < *fc){
         *ax = *bx;
@@ -86,23 +79,18 @@ void mnbrak(double *ax,double *bx,double *cx,double *fa,double *fb,double *fc,Un
         return;
       }
       u = (*cx) + GOLD*(*cx - *bx);
-      //fu = (*func)(u);
       fu = func(u);
     } else if ((*cx - u)*(u - ulim) > 0.0){
-      //fu = (*func)(u);
       fu = func(u);
       if (fu < *fc){
         SHIFT(*bx,*cx,u,*cx + GOLD*(*cx - *bx));
-        //SHIFT(*fb,*fc,fu,(*func)(u));
         SHIFT(*fb,*fc,fu,func(u));
       }
     } else if ((u - ulim)*(ulim - *cx) >= 0.0){
       u = ulim;
-      //fu = (*func)(u);
       fu = func(u);
     } else {
       u = (*cx) + GOLD*(*cx - *bx);
-      //fu = (*func)(u);
       fu = func(u);
     }
     SHIFT(*ax,*bx,*cx,u);
@@ -154,7 +142,6 @@ double brent(const double ax,const double bx,const double cx,const double tol,do
       d = CGOLD*e;
     }
     u = (std::abs(d) >= tol1 ? x + d : x + SIGN(tol1,d));
-    // fu = (*f)(u);
     fu = func(u);
     if(fu <= fx){
       if (u >= x) a = x; else b = x;
@@ -195,7 +182,6 @@ struct funcMin{
   double min_value;
   Eigen::VectorXd arg_min,gradient;
 };
-
 
 /*
  * Arguments: xold are the current parameter values, and fold is the current objective function value
@@ -255,7 +241,6 @@ void cubic_linemin(VecRef xold, const double fold, VecRef g,refVec p,refVec x,do
   throw("line search exceeded max. iterations");
 }
 
-
 template<typename T>
 class brent_linemin{
 public:
@@ -306,6 +291,7 @@ double brent_linemin<T>::linemin(VectorXd& p,VecRef dir0){
 template<typename T>
 funcMin dfpmin(VectorXd& p0,const T& funcd,const Eigen::Ref<const Eigen::VectorXi>& zc,const std::string& method = "Brent",int verb = 0,double ftol = 0.,double gtol = 0.){
   using namespace Eigen;
+  using Rcpp::Rcout;
   constexpr double EPS = 1.0e-10;
   const int ITMAX = 200, n = p0.size();
   bool check, zeros = zc(0) >= 0;     // do we need to futz around with setting things to zero? (if fitting a constrained model)
@@ -320,13 +306,14 @@ funcMin dfpmin(VectorXd& p0,const T& funcd,const Eigen::Ref<const Eigen::VectorX
   MatrixXd hessian( MatrixXd::Identity(n,n) );
   VectorXd g(n), oldg(n), hdg(n), p(p0), pnew(p0), pdiff(n);
   funcd.df(p,g);
+  if(zeros) setZeros(g,zc);
   VectorXd xi{-g};  // initial candidate search direction
   for(its = 0;its < ITMAX;its++){
     if(verb > 0){
-      Rcout << "\n*****\n   Iteration " << its << endl;
-      if(verb > 1){ Rcpp::Rcout << "theta = " << p.head(psz).transpose() << endl; }
-      Rcout << "objective function value: " << fret << endl;
-      Rcout << "gradient norm: " << g.norm() << endl ;
+      Rcout << "\n*****\n   Iteration " << its << std::endl;
+      if(verb > 1){ Rcout << "theta = " << p.head(psz).transpose() << std::endl; }
+      Rcout << "objective function value: " << fret << std::endl;
+      Rcout << "gradient norm: " << g.norm() << std::endl ;
     }
     if(method == "Brent"){
       fret = BL.linemin(pnew,xi);
