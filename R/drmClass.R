@@ -44,34 +44,43 @@ parseDots = function(lst){
 #' \code{drm} fits a semi-parametric \emph{density ratio model} under the assumption that the outcomes follow an
 #' exponential family distribution.  The probability density function is
 #' \deqn{f(y|X)=\frac{dF_0(y)\exp\left(y * X^{\top}\beta\right)}{\int\exp\left(z * X^{\top}\beta\right)dF_{0}(z)}}{f(y|X) = f_0(y)*exp(y'Xb)/Integral(f0(z)*exp(z\cdot Xb)dz)}
-#' for a baseline distribution function \eqn{F_0} with density/p.m.f. \eqn{f_0}
+#' for a baseline distribution function \eqn{F_0} with density/p.m.f. \eqn{f_0}.
 #' The functionality is intended to match that of \code{lm}; however, note that arguments \code{weights} and \code{offset} are not supported.
 #' Model fitting is done via Newton's method with the inverse-Hessian approximation scheme of Broyden, Flecher, Goldfarb, and Shanno, equivalent to \code{optim}'s BFGS.
+#' 
 #' @param formula  A formula specifying the response and predictors, in the same manner as \code{lm}, \code{glm}, etc.
-#' @param data  A data frame from which to extract the variables indicated in the formula
-#' @param subset optional parameter for subsetting the data in argument \code{data}, following \code{lm} or \code{glm}
-#' @param contrasts Optional argument specifying contrasts for factor covariates. See documentation for \code{stats::model.matrix}
-#' @param fitOptions An optional named list which may be populated with control parameters. Named members may include:
-#' \code{tol}, the convergence criterion. This means slightly different things depending on whether \code{method="Brent"} or not.
+#' @param data  A data frame from which to extract the variables indicated in the formula.
+#' @param subset Optional parameter for subsetting the data in argument \code{data}, following \code{lm} or \code{glm}.
+#' @param contrasts Optional argument specifying contrasts for factor covariates. See documentation for \code{stats::model.matrix}.
+#' @param fitOptions See details.
+#' 
+#' @details
+#' Several fitting options may be passed in the optional list argument \code{fitOptions}. Order is not important. 
+#' Named members may include:
+#' \describe{
+#'   \item{\code{tol}}{(double), the convergence criterion. This means slightly different things depending on whether \code{method="Brent"} or not.
 #' In the first case, convergence is defined as \deqn{2*\|f_{old}-f_{new}\|\leq\|f_{old}\|+\|f_{new}\|+\epsilon}
-#' Otherwise, we directly compare the Euclidean norm of the gradient to \code{tol}.
-#' \code{maxit}, maximum number of iterations
-#' \code{verbosity}, controlling diagnostic output shown during model fitting (higher gives more output and zero gives none);
-#' \code{maxStep}, a parameter passed to the line search algorithm which may be shrunk 
-#' \code{justBeta}, indicating whether to only fit a point estimate
-#' \code{zero_index}, an optional (column-major) vector of indices of beta coefficients to fix at zero when fitting.
+#' Otherwise, we directly compare the Euclidean norm of the gradient to \code{tol}.}
+#' \item{\code{maxit}}{(integer), maximum number of iterations.}
+#' \item{\code{verbosity}}{(unsigned integer) controls diagnostic output shown during model fitting (higher gives more output and zero gives none).}
+#' \item{\code{maxStep}}{(double), a parameter passed to the line search algorithm which may affect the max. step size. Only
+#' adjust if trying to resolve convergence issues.}
+#' \item{\code{justBeta}}{(boolean), Only fit a point estimate of model parameters and don't calculate covariance
+#' matrix or standard errors. Useful for large data sets or simulations.}
+#' \item{\code{zero_index}}{A (column-major) vector of indices of beta coefficients to fix at zero when fitting.
 #' This may be useful for fitting a model under a null hypothesis, esp. with multivariate data. Since the intercept is not an independent
-#' parameter in this model, intercept parameter(s) cannot be fixed at zero in this way.
-#' \code{method}, if "Brent", uses Brent's method to find a suitable objective function decrease in the current search direction.
+#' parameter in this model, intercept parameter(s) cannot be fixed at zero in this way.}
+#' \item{\code{method}}{(string) If "Brent", uses Brent's method to find a suitable objective function decrease in the current search direction.
 #' Otherwise, uses a cubic approximation to fulfill the Wolfe conditions. Both methods use the BFGS Quasi-Newton algorithm to pick
-#' candidate directions. The 'Brent' method seems to be a little more stable for this problem, but both should yield the same estimates.
-#' Defaults are \code{list(1.0e-4,150,0,10,FALSE,"Brent")}, respectively.
-#' Other elements in \code{fitOptions} will not raise an error, but they are ignored. Names do not need to match in a case-sensitive manner.
+#' candidate directions. The 'Brent' method seems to be a little more stable for this problem, but both should yield the same estimates.}
+#' }
+#' Defaults are \code{list(1.0e-4,150,0,10,FALSE,0L,"Brent")}, respectively.
+#' Other elements in \code{fitOptions} will not raise an error, but they are ignored. Option names are not case-sensitive.
 #' @return A DRM object.  Use \code{summary(x)} or \code{plot(x)} to obtain summary information or \code{names(x)} to view all fields, 
 #' where \code{x} is a drm object. It is an S4 object, so the slots may be explored as usual.
 #'
 #' 
-#' @seealso \code{\link[mdrm:summary-DRM_-method]{summary}}, \code{\link[mdrm:plot-DRM_-method]{plot}}, \code{\link[mdrm:names-DRM_-method]{names}}
+#' @seealso \code{\link[mdrm:summary-DRM-method]{summary}}, \code{\link[mdrm:plot-DRM-missing-method]{plot}}, \code{\link[mdrm:names-DRM-method]{names}}
 #' @export
 drm = function(formula,data,subset,contrasts=NULL,fitOptions=list()){
   cl = match.call()   # this one is just used to return the call along with the model summary
@@ -94,7 +103,7 @@ drm = function(formula,data,subset,contrasts=NULL,fitOptions=list()){
 	if(is.null(colnames(xx))){ colnames(xx) = paste0("X",1:ncol(xx)) }
 	defOpt = parseDots(fitOptions)
 	if(any(is.na(defOpt$zero_index)) || min(defOpt$zero_index,na.rm=TRUE) < 0) stop("drm: Invalid zero indices")
-	Obj = DRM_(X = xx, Y = yy)  # instantiate class member
+	Obj = DRM(X = xx, Y = yy)  # instantiate class member
 	res = fitdrm(Obj@Y,Obj@X,zero_index = defOpt$zero_index-1,TOL = defOpt$tol, # subtract 1 from zero_index for 0-based indexing in C++
 	             MAXIT = defOpt$maxit,verb = defOpt$verbosity,method = defOpt$method,
 	             justBeta = defOpt$justbeta)  # "internal" fitting function
@@ -117,7 +126,6 @@ drm = function(formula,data,subset,contrasts=NULL,fitOptions=list()){
 	Obj@p.value = 2*(1-pnorm(abs(Obj@beta)/Obj@sdbeta))
 	Obj@betaC = rbind(res$b0,res$beta%*%(cov(Obj@resid))) # intercept does not need scaling
 	Obj@user.call = cl
-	Obj@is_fitted = TRUE
 	nac = attr(mf,"na.action")
 	Obj@na_omit = if(is.null(nac)) 0L else length(nac)
 	zcs = defOpt$zero_index
@@ -127,7 +135,29 @@ drm = function(formula,data,subset,contrasts=NULL,fitOptions=list()){
 
 valDRM = function(object){return(TRUE)}  # this could be expanded
 
-DRM_ = setClass(Class = "DRM_",
+#' An S4 class for fitting density ratio model and summarizing results
+#' 
+#' @slot X the regressors
+#' @slot Y the outcome(s)
+#' @slot U unique values of Y
+#' @slot nUniq multiplicities of unique values of Y
+#' @slot beta regression parameters
+#' @slot Fhat jumps sizes of functional parameter
+#' @slot N sample size
+#' @slot resid model residuals
+#' @slot sdbeta standard errors of beta
+#' @slot sdF standard errors of Fhat
+#' @slot covHat covariance matrix of all parameters
+#' @slot p.value p-values for beta
+#' @slot logLik log-likelihood of MLE
+#' @slot iterations number of iterations incurred during the fitting process
+#' @slot alpha parameters which are softmax-transformed to attain Fhat
+#' @slot betaC beta scaled by the sample covariance of residuals
+#' @slot user.call used in displayed output; records the formula used to generate X and Y
+#' @slot na_omit indices of any values which were omitted due to missingness
+#' @slot zc records indices of any parameters which were requested to fix at zero during fitting
+
+DRM = setClass(Class = "DRM",
 	slots = c(X = "matrix",
 	          Y = "matrix",
 	          U = "matrix", 
@@ -137,7 +167,6 @@ DRM_ = setClass(Class = "DRM_",
 	          N = "numeric",
 	          resid = "matrix",
 	          conv = "integer",
-	          preProcess = "logical",
 	          sdbeta = "matrix",
 	          sdF = "numeric",
 	          covHat = "matrix",
@@ -147,72 +176,66 @@ DRM_ = setClass(Class = "DRM_",
 	          alpha = "numeric",
 	          betaC = "matrix",
 	          user.call = "call",
-	          errMsg = "character",
-	          is_fitted = "logical",
 	          na_omit = "integer",
-			  zc = "integer"
+	          zc = "integer"
 	),
-	prototype = list(preProcess = FALSE,conv = 1L,errMsg = "",is_fitted = FALSE),
+	prototype = list(),
 	validity = valDRM
 )
 
-# notice that for the base R function 'print', the main argument is 'x'. This HAS TO MATCH when 
-# overloading print for objects of a new class. Likewise the name of summary()'s argument is 'object'...
-
 #' Print an object of class 'DRM'
 #'
-#' prints a brief summary of an object retured from calling \code{drm}.  See \code{\link{names}} for a more thorough object description.
+#' prints a brief summary of an object retured from calling \code{drm}.  See \code{\link[mdrm:names-DRM-method]{names}} for a more thorough object description.
 #' @param x an object returned from calling \code{drm}
 #' @return Information printed to screen.
 #' @export
-setMethod(f = "print", signature = "DRM_", 
+setMethod(f = "print", signature = "DRM", 
 	definition = function(x){
-	  if(x@is_fitted){
-	    cat("\nAn object of class 'DRM'\n");
-	    cat("Call:\n\t"); print(x@user.call)
-	    cat(paste0("\n# observations: ",x@N,"\n"))
-	    cat(paste0("Unique Outcomes: ",length(x@Fhat),"\n"))
-	    cat("\nRegression coefficients: \n")
-	    print(round(x@beta,digits=3))
-	  } else {
-	    cat('\nThis object has not been fit yet.\n')
-	  }
+	  cat("\nAn object of class 'DRM'\n");
+	  cat("Call:\n\t"); print(x@user.call)
+	  cat(paste0("\n# observations: ",x@N,"\n"))
+	  cat(paste0("Unique Outcomes: ",length(x@Fhat),"\n"))
+	  cat("\nRegression coefficients: \n")
+	  print(round(x@beta,digits=3))
 	})
 
 #' List the names (attributes) of a DRM object
 #'
 #' Equivalent to \code{names(d)} when d has class data.frame, lm, etc (i.e. when it is a list).
 #' Use x$name to see the contents of the named attribute; for example x$sdbeta 
-#' will return the matrix of estimated standard deviations of the model's \deqn{\beta}{beta} coefficients.
+#' will return the matrix of estimated standard deviations of the model's \eqn{\beta}{beta} coefficients.
+#' 
 #' @param x Object of class 'DRM'
-#' @return A list of object names
-#' @seealso \code{\link{drm}}, \code{\link[mdrm:summary-DRM_-method]{summary}}
+#' @return A list of object names.
+#' @seealso \code{\link{drm}}, \code{\link[mdrm:summary-DRM-method]{summary}}
 #' @export
-setMethod(f = "names", signature = "DRM_",
+setMethod(f = "names", signature = "DRM",
 	definition = function(x){ return(slotNames(x)) })
 
 # show() is just an alias of print()
 
-setMethod(f = "show",signature = "DRM_",
+setMethod(f = "show",signature = "DRM",
 	definition = function(object){
 		print(object)
 	})
 	
-#' Allow the familiar `$` accessor with S4 objects
+#' Allow the `$` accessor with S4 objects
 #'
-#' While S4 slots are naturally available for DRM_ objects, most users are more familiar with operator$, and it may be more convenient.
+#' While S4 slots are naturally available for DRM objects, most users are more familiar with operator$, and it may be more convenient.
 #'
-#' @param x Object of class 'DRM'
-#' @param name a valid name (a member of \code{names(x)})
-#' @seealso \code{\link[mdrm:names-DRM_-method]{names}}
-setMethod(f = `$`, signature = "DRM_",
+#' @param x Object of class 'DRM'.
+#' @param name a valid name (an element of \code{slotNames(x)}).
+#' @seealso \code{\link[mdrm:names-DRM-method]{names}}
+setMethod(f = `$`, signature = "DRM",
 	function(x,name){
-		return(slot(x,name))
+	  return(slot(x,name))
 	})
-	
+
 #' Get the covariance matrix of model parameters
 #'
-#' This is just a wrapper which returns object@covHat, to keep a consistent interface.
+#' This is just a wrapper which returns \code{object@covHat}, the covariance matrix of model parameters.
+#' The parameters are ordered \eqn{F,\beta}, so that the upper-left block is the covariance of \eqn{\hat{F}},
+#' the lower-right block is the covariance of \eqn{\hat{\beta}}.
 #'
 #' @param object a fitted drm object
 #' @param ... more arguments (for consistency with the S3 generic function). They're ignored.
@@ -220,7 +243,7 @@ setMethod(f = `$`, signature = "DRM_",
 #' of the jump sizes \eqn{\hat{F}} and the mean parameters \eqn{\hat{\beta}}, respectively.
 #' @rdname vcov-method
 #' @export
-setMethod(f = "vcov",signature = "DRM_",
+setMethod(f = "vcov",signature = "DRM",
 	definition = function(object,...){
 		return(object@covHat)
 	})
@@ -230,38 +253,39 @@ setMethod(f = "vcov",signature = "DRM_",
 #' Provides an S3-generic method for getting log-likelihood from objects of DRM class
 #' 
 #' @param object a fitted drm object
-#' @param ... extra arguments to satisfy method dispatch; are ignored
+#' @param ... extra arguments to satisfy method dispatch; are ignored.
 #' @rdname logLik-method
 #' @export
-setMethod(f = "logLik",signature = "DRM_",
+#' @return The log-likelihood at the MLE for this object.
+setMethod(f = "logLik",signature = "DRM",
           definition = function(object,...){
             return(object@logLik)
           })
 
 #' Extract Model Residuals
 #'
-#' Provides a convenient accessor to model residuals
+#' Provides a convenient accessor to model residuals.
 #' 
 #' @param object a fitted drm object
-#' @param ... extra arguments to satisfy method dispatch; are ignored
+#' @param ... extra arguments to satisfy method dispatch; are ignored.
 #' @return Model residuals, a matrix of size \eqn{N\times Q} (naturally, of size \code{dim(Y)}). Only raw residuals are available
 #' @rdname residuals-method
 #' @export
-setMethod(f = "residuals",signature = "DRM_",
+setMethod(f = "residuals",signature = "DRM",
           definition = function(object,...){
             return(object@resid)
           })
 
 #' Extract Model Residuals
 #'
-#' Provides a convenient accessor to model residuals
+#' Provides a convenient accessor to model residuals.
 #' 
 #' @param object a fitted drm object
-#' @param ... extra arguments to satisfy method dispatch; are ignored
+#' @param ... extra arguments to satisfy method dispatch; are ignored.
 #' @return Model residuals, a matrix of size \eqn{N\times Q} (naturally, of size \code{dim(Y)}). Only raw residuals are available
 #' @rdname resid-method
 #' @export
-setMethod(f = "resid",signature = "DRM_",
+setMethod(f = "resid",signature = "DRM",
           definition = function(object,...){
             return(object@resid)
           })
@@ -269,32 +293,32 @@ setMethod(f = "resid",signature = "DRM_",
 
 #' Get the sample size used in model fitting
 #' 
-#' This is mostly for interface with the sandwich package. Just returns \code{object@N}
+#' This is mostly for interface with the sandwich package. Just returns \code{object@N}.
 #'
 #' @param object a fitted drm object
-#' @param ... more arguments (for consistency with the S3 generic function). It is ignored.
-#' @return The sample size N of this model
+#' @param ... extra arguments to satisfy method dispatch; are ignored.
+#' @return The sample size \eqn{N} of data used to fit this model (excludes missing observations).
 #' @rdname nobs-method
 #' @export
 setMethod(f = "nobs",
-          signature = "DRM_",
+          signature = "DRM",
           definition = function(object,...){
             return(object@N)
           })
 
 #' Get model coefficients
 #' 
-#' It is probably just as easy to use the slot names directly, but for consistency this method is available, too
+#' It is probably just as easy to use the slot names directly, but for consistency this method is available, too.
 #' 
 #' @param object a fitted drm object
 #' @param ... a list; the named argument 'which' is parsed and may take values 'alpha', 'beta', or 'Fhat'.
 #' In this case, only that subset of parameters is returned.
-#' otherwise (by default), returns a list with both.
+#' otherwise (by default), returns a list with all three.
 #' @return A matrix or vector (if argument \code{which} is used), or a list with components \code{alpha}
-#' and \code{beta}
+#' and \code{beta}.
 #' @rdname coef-method
 #' @export
-setMethod(f = "coef",signature = "DRM_",
+setMethod(f = "coef",signature = "DRM",
           definition = function(object,...){
             argL = list(...)
             if("which" %in% names(argL)){
@@ -309,15 +333,16 @@ setMethod(f = "coef",signature = "DRM_",
 #' It is probably just as easy to use the slot names directly, but for consistency this method is available, too
 #' 
 #' @param object a fitted drm object
-#' @param ... a list; the named argument 'which' is parsed and may take values 'alpha' or 'beta'. In this case, only that subset of parameters is returned.
-#' otherwise (by default), returns a list with both.
+#' @param ... a list; the named argument 'which' is parsed and may take values 'alpha', 'beta', or 'Fhat'.
+#' In this case, only that subset of parameters is returned.
+#' otherwise (by default), returns a list with all three.
 #' @return A matrix or vector (if argument \code{which} is used), or a list with components \code{alpha}
-#' and \code{beta}
+#' and \code{beta}.
 #' @rdname coefficients-method
 #' @export
-setMethod(f = "coefficients",signature = "DRM_",
+setMethod(f = "coefficients",signature = "DRM",
           definition = function(object,...){
-            coef(object,...) # alias for coef()
+            coef(object,...)
           })
 
 #' Extract Model Fitted Values
@@ -325,9 +350,11 @@ setMethod(f = "coefficients",signature = "DRM_",
 #' Identical to \code{object@Y - resid(object)}.
 #' 
 #' @param object a fitted drm object
+#' @param ... extra arguments to satisfy method dispatch; are ignored
+#' @rdname fitted-method
 #' @return The fitted values of the response \code{Y}.
 #' @export
-setMethod(f = "fitted",signature = "DRM_",
+setMethod(f = "fitted",signature = "DRM",
           definition = function(object,...){
             object@Y - object@resid
           })
@@ -358,14 +385,14 @@ makeLine = function(w,contents){
 #'
 #' Coefficient estimates, standard deviations, z-scores and p-values for the \emph{parametric} parameters \eqn{\hat{\beta}}
 #'
-#' Asymptotically, the non-parametric MLE coefficients \deqn{\hat{\beta}}{beta-hat} follow a zero-mean normal distribution.
+#' Asymptotically, the non-parametric MLE coefficients \eqn{\hat{\beta}}{beta-hat} follow a zero-mean normal distribution.
 #' The summary table provides the p-values for a two-sided Wald test.
 #' @param object an object of class 'DRM'
 #' @return A summary table of Wald tests.
 #' @seealso \code{\link[mdrm:lr_test-method]{lr_test}} for testing multiple coefficients via a likelihood-ratio test.
 #' @export
 
-setMethod(f = "summary", signature = "DRM_",
+setMethod(f = "summary", signature = "DRM",
 	definition = function(object){
 		cFmt = "%.3f" # controls rounding
 		Q = NCOL(object@beta); P = NROW(object@beta)
@@ -401,19 +428,28 @@ setMethod(f = "summary", signature = "DRM_",
 		if(object@na_omit > 0) cat("\n(",object@na_omit," observations removed due to missingness)\n\n",sep="")
 	})
 
+# the log-likelihood is not difficult to calculate here in R:
+drm_loglik = function(oo,tstB){
+  XB = oo@X%*%tstB
+  LL = sum(oo@Y*XB)+sum(log(oo@Fhat)*oo@nUniq)
+  E = exp(oo@U%*%t(XB))*oo@Fhat
+  LL - sum(log(colSums(E)))
+}
+
 #' Likelihood ratio test
 #'
-#' A function to perform likelihood ratio test for likelihood ratio tests
+#' Perform likelihood ratio test for mean parameters in density ratio model.
 #'
 #' This is a generic function which is implemented as an S4 method for the DRM class
 #'
-#' Calculates the result of a \deqn{\chi^2}{chi-squared} test for \deqn{H_0:}{H0:} specified elements of \deqn{\beta}{beta} are zero
-#' vs. the alternative in which the likelihood is evaluated at \deqn{\hat{\beta}_{MLE}}{beta_MLE}.
+#' Calculates the result of a \eqn{\chi^2}{chi-squared} test for \eqn{H_0:}{H0:} specified elements of 
+#' \eqn{\beta}{beta} are zero vs. the alternative in which the likelihood is evaluated at 
+#' \eqn{\hat{\beta}_{MLE}}{beta_MLE}.
 #'
-#' @param obj An object of the appropriate class
+#' @param obj An object returned by \code{drm()}.
 #' @param tstMat The parameter values corresponding to the null hypothesis (assuming that the MLE is the alternative)
-#' @param literal A boolean indicating whether the provided values of tstMat should be used verbatim or as indicators of which elements of
-#' the MLE to set to zero.
+#' @param literal A boolean indicating whether the provided values of tstMat should be used verbatim or as 
+#' indicators of which elements of the MLE to set to zero.
 #' @return A list detailing the results of the likelihood ratio test.
 #' @docType methods
 #' @rdname lr_test-method
@@ -429,10 +465,9 @@ setGeneric(name = "lr_test", def = function(obj,tstMat,literal){standardGeneric(
 #' @param tstMat The parameter values for \eqn{\beta}
 #' @param literal A boolean indicating whether the provided values of tstMat should be used verbatim or as indicators of which elements of
 #' the MLE to set to zero.
-#' @seealso \code{\link[mdrm:summary-DRM_-method]{summary}}
-setMethod(f = "lr_test", signature = "DRM_",
+#' @seealso \code{\link[mdrm:summary-DRM-method]{summary}}
+setMethod(f = "lr_test", signature = "DRM",
 	definition = function(obj,tstMat,literal = FALSE){
-	  stopifnot(obj@is_fitted)
 		if(!isTRUE(all.equal(dim(tstMat),dim(obj@beta))))
 		  stop(paste0("Error: dimension of test matrix must have ",nrow(obj@beta),
 		              "rows and ",ncol(obj@beta)," columns."))
@@ -442,25 +477,16 @@ setMethod(f = "lr_test", signature = "DRM_",
 			tstB = obj@beta*tstMat
 		}
 		tstDF = sum(tstB!=obj@beta)
-		LLalt = LLcalc(obj,tstB)
+		LLalt = drm_loglik(obj,tstB)
 		ts = 2*(obj@logLik-LLalt)
 		pval = 1-pchisq(ts,df=tstDF)
 		return(list("Beta_MLE" = obj@beta,"Beta_test" = tstB,"test_statistic" = ts, "df" = tstDF, "p_value" = pval))
 })
 
-# the log-likelihood is not difficult to calculate here in R:
-drm_loglik = function(oo,tstB){
-  stopifnot(oo@is_fitted)
-	XB = oo@X%*%tstB
-	LL = sum(oo@Y*XB)+sum(log(oo@Fhat)*oo@nUniq)
-	E = exp(oo@U%*%t(XB))*oo@Fhat
-	LL - sum(log(colSums(E)))
-}
-
 #' Bootstrap estimation of residuals' (co)variance
 #'
-#' In the case of scaling the estimated coefficients \eqn{\beta} by the residual covariance, estimate
-#' the standard errors of the scaled parameters via non-parametric bootstrap
+#' estimate the standard errors of the scaled parameters via non-parametric bootstrap.
+#' In the case of scaling the estimated coefficients \eqn{\beta} by the residual covariance, 
 #'
 #' Word of caution: if the data set and/or requested number of bootstrap samples is very large, we may overflow RAM when summarize is
 #' FALSE since storage is on the order \code{B*N*(ncol(X)+ncol(Y))}.  When summarize = TRUE, the factor of \code{N} disappears.

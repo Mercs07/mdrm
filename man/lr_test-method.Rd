@@ -9,22 +9,23 @@
 lr_test(obj, tstMat, literal)
 }
 \arguments{
-\item{obj}{An object of the appropriate class}
+\item{obj}{An object returned by \code{drm()}.}
 
 \item{tstMat}{The parameter values corresponding to the null hypothesis (assuming that the MLE is the alternative)}
 
-\item{literal}{A boolean indicating whether the provided values of tstMat should be used verbatim or as indicators of which elements of
-the MLE to set to zero.}
+\item{literal}{A boolean indicating whether the provided values of tstMat should be used verbatim or as 
+indicators of which elements of the MLE to set to zero.}
 }
 \value{
 A list detailing the results of the likelihood ratio test.
 }
 \description{
-A function to perform likelihood ratio test for likelihood ratio tests
+Perform likelihood ratio test for mean parameters in density ratio model.
 }
 \details{
 This is a generic function which is implemented as an S4 method for the DRM class
 
-Calculates the result of a \deqn{\chi^2}{chi-squared} test for \deqn{H_0:}{H0:} specified elements of \deqn{\beta}{beta} are zero
-vs. the alternative in which the likelihood is evaluated at \deqn{\hat{\beta}_{MLE}}{beta_MLE}.
+Calculates the result of a \eqn{\chi^2}{chi-squared} test for \eqn{H_0:}{H0:} specified elements of 
+\eqn{\beta}{beta} are zero vs. the alternative in which the likelihood is evaluated at 
+\eqn{\hat{\beta}_{MLE}}{beta_MLE}.
 }

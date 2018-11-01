@@ -4,36 +4,18 @@
 \alias{drm}
 \title{(Multivariate) Density Ratio Model}
 \usage{
-drm(formula, data, subset, na.action, contrasts = NULL,
-  fitOptions = list())
+drm(formula, data, subset, contrasts = NULL, fitOptions = list())
 }
 \arguments{
 \item{formula}{A formula specifying the response and predictors, in the same manner as \code{lm}, \code{glm}, etc.}
 
-\item{data}{A data frame from which to extract the variables indicated in the formula}
+\item{data}{A data frame from which to extract the variables indicated in the formula.}
 
-\item{subset}{optional parameter for subsetting the data in argument \code{data}, following \code{lm} or \code{glm}}
+\item{subset}{Optional parameter for subsetting the data in argument \code{data}, following \code{lm} or \code{glm}.}
 
-\item{na.action}{What to do with missing values. See correponding documentation for \code{glm} (or \code{model.frame})}
+\item{contrasts}{Optional argument specifying contrasts for factor covariates. See documentation for \code{stats::model.matrix}.}
 
-\item{contrasts}{Optional argument specifying contrasts for factor covariates. See documentation for \code{stats::model.matrix}}
-
-\item{fitOptions}{An optional named list which may be populated with control parameters. Named members may include:
-\code{tol}, the convergence criterion. This means slightly different things depending on whether \code{method="Brent"} or not.
-In the first case, convergence is defined as \deqn{2*\|f_{old}-f_{new}\|\leq\|f_{old}\|+\|f_{new}\|+\epsilon}
-Otherwise, we directly compare the Euclidean norm of the gradient to \code{tol}.
-\code{maxit}, maximum number of iterations
-\code{verbosity}, controlling diagnostic output shown during model fitting (higher gives more output and zero gives none);
-\code{maxStep}, a parameter passed to the line search algorithm which may be shrunk 
-\code{justBeta}, indicating whether to only fit a point estimate
-\code{zero_index}, an optional (column-major) vector of indices of beta to fix at zero when fitting.
-This may be useful for fitting a model under a null hypothesis. Naturally the elements of this vector
-must be between 1 and the dimension of the \eqn{\beta} matrix.
-\code{method}, if "Brent", uses Brent's method to find a suitable objective function decrease in the current search direction.
-Otherwise, uses a cubic approximation to fulfill the Wolfe conditions. Both methods use the BFGS Quasi-Newton algorithm to pick
-candidate directions. The 'Brent' method seems to be a little more stable for this problem, but both should yield the same estimates.
-Defaults are \code{list(1.0e-4,150,0,10,FALSE,"Brent")}, respectively.
-Other elements in \code{fitOptions} will not raise an error, but they are ignored. Names do not need to match in a case-sensitive manner.}
+\item{fitOptions}{See details.}
 }
 \value{
 A DRM object.  Use \code{summary(x)} or \code{plot(x)} to obtain summary information or \code{names(x)} to view all fields, 
@@ -46,10 +28,33 @@ Fits a semi-parametric density ratio model and returns an object of the correspo
 \code{drm} fits a semi-parametric \emph{density ratio model} under the assumption that the outcomes follow an
 exponential family distribution.  The probability density function is
 \deqn{f(y|X)=\frac{dF_0(y)\exp\left(y * X^{\top}\beta\right)}{\int\exp\left(z * X^{\top}\beta\right)dF_{0}(z)}}{f(y|X) = f_0(y)*exp(y'Xb)/Integral(f0(z)*exp(z\cdot Xb)dz)}
-for a baseline distribution function \eqn{F_0} with density/p.m.f. \eqn{f_0}
+for a baseline distribution function \eqn{F_0} with density/p.m.f. \eqn{f_0}.
 The functionality is intended to match that of \code{lm}; however, note that arguments \code{weights} and \code{offset} are not supported.
 Model fitting is done via Newton's method with the inverse-Hessian approximation scheme of Broyden, Flecher, Goldfarb, and Shanno, equivalent to \code{optim}'s BFGS.
+
+
+Several fitting options may be passed in the optional list argument \code{fitOptions}. Order is not important. 
+Named members may include:
+\describe{
+  \item{\code{tol}}{(double), the convergence criterion. This means slightly different things depending on whether \code{method="Brent"} or not.
+In the first case, convergence is defined as \deqn{2*\|f_{old}-f_{new}\|\leq\|f_{old}\|+\|f_{new}\|+\epsilon}
+Otherwise, we directly compare the Euclidean norm of the gradient to \code{tol}.}
+\item{\code{maxit}}{(integer), maximum number of iterations.}
+\item{\code{verbosity}}{(unsigned integer) controls diagnostic output shown during model fitting (higher gives more output and zero gives none).}
+\item{\code{maxStep}}{(double), a parameter passed to the line search algorithm which may affect the max. step size. Only
+adjust if trying to resolve convergence issues.}
+\item{\code{justBeta}}{(boolean), Only fit a point estimate of model parameters and don't calculate covariance
+matrix or standard errors. Useful for large data sets or simulations.}
+\item{\code{zero_index}}{A (column-major) vector of indices of beta coefficients to fix at zero when fitting.
+This may be useful for fitting a model under a null hypothesis, esp. with multivariate data. Since the intercept is not an independent
+parameter in this model, intercept parameter(s) cannot be fixed at zero in this way.}
+\item{\code{method}}{(string) If "Brent", uses Brent's method to find a suitable objective function decrease in the current search direction.
+Otherwise, uses a cubic approximation to fulfill the Wolfe conditions. Both methods use the BFGS Quasi-Newton algorithm to pick
+candidate directions. The 'Brent' method seems to be a little more stable for this problem, but both should yield the same estimates.}
+}
+Defaults are \code{list(1.0e-4,150,0,10,FALSE,0L,"Brent")}, respectively.
+Other elements in \code{fitOptions} will not raise an error, but they are ignored. Option names are not case-sensitive.
 }
 \seealso{
-\code{\link[mdrm:summary-DRM_-method]{summary}}, \code{\link[mdrm:plot-DRM_-method]{plot}}, \code{\link[mdrm:names-DRM_-method]{names}}
+\code{\link[mdrm:summary-DRM-method]{summary}}, \code{\link[mdrm:plot-DRM-missing-method]{plot}}, \code{\link[mdrm:names-DRM-method]{names}}
 }

@@ -1,21 +1,24 @@
 Package: mdrm
-Title: Semiparametric modeling of exponential families
+Title: Semiparametric Modeling of Exponential Families
 Version: 0.0.1
 Author: Scott Marchese [aut,cre]
 Maintainer: Scott Marchese <skmarches@gmail.com>
 Description: Fitting density ratio models for univariate and multivariate outcomes.
 Depends:
     R (>= 3.5.0)
-License: GPL
+License: GPL-3
+Copyright: Applicable copyright(s) inherited from Eigen via https://cran.r-project.org/web/packages/RcppEigen/index.html - MPL2.
+BugReports: https://github.com/smarches/mdrm/issues
 LazyData: true
+NeedsCompilation: yes
 LinkingTo: Rcpp, RcppEigen
 Encoding: UTF-8
 Imports:
     Rcpp,
-    RcppEigen,
 	stats,
 	graphics,
 	methods,
-	lattice,
-	viridis
+	viridis,
+	scales,
+	hexbin
 RoxygenNote: 6.1.0

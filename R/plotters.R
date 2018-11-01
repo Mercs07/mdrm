@@ -4,21 +4,26 @@
 
 #' plot the empirical baseline distribution function.	
 #'
-#' \samp{plot{x}} plots the baseline CDF based on the estimated jump sizes \eqn{F}, where \eqn{x} is an objet of class \code{DRM}
+#' \samp{plot(x)} plots the baseline CDF based on the estimated jump sizes \eqn{F}, where \eqn{x} is 
+#' an object of class \code{DRM}.
 #'
-#' The number of distinct jumps equals the number of unique \eqn{Y} observations (calculated row-wise if Y is a matrix like \code{unique(Y)}).
-#' For univariate Y, 95% confidence bands are included.  Note that, given \eqn{m} unique outcomes, model identifiability requires \eqn{\sum_{j=1}^{m}F_j=1}
-#' so that there are \eqn{m-1} parameters. We set \eqn{F_{m}\equiv 1-\sum_{j=1}^{m-1}F_j}.
+#' The number of distinct jumps equals the number of unique \eqn{Y} observations (calculated row-wise if 
+#' Y is a matrix like \code{unique(Y)}).
+#' For univariate Y, 95\% confidence bands are included.  Note that, given \eqn{m} unique outcomes, 
+#' model identifiability requires \eqn{\sum_{j=1}^{m}F_j=1} so that there are \eqn{m-1} parameters. 
+#' We set \deqn{F_{m}= 1-\sum_{j=1}^{m-1}F_j}.
 #' 
-#' Note that plotting is only implemented for univariate and bivariate outcomes.
+#' Plotting is only implemented for univariate and bivariate outcomes.
 #' @param x an object of class 'DRM', created by calling \code{\link{drm}}
-#' @return nothing; called for its side effect of creating a plot
+#' @param y ignored.
+#' @param ... ignored; part of function signature for compatibility with S3 method.
+#' @return \code{invisible()}; called for its side effect of creating a plot.
 #' @seealso \code{\link{drm}}
 #' @export
-setMethod(f = "plot", signature = "DRM_",
-          definition = function(x,...){
-            if(!x@is_fitted) stop("Model not yet fit to the data.")
+setMethod(f = "plot", signature = signature(x = "DRM", y = "missing"),
+          definition = function(x,y,...){
             if(ncol(x@Y)>2){stop("Sorry, plotting is defined only for univariate or bivariate outcomes.")}
+            op = par(no.readonly = TRUE); on.exit(par(op))
             if(ncol(x@Y) == 1){
               m = NROW(x@U)
               p = m-1 # number of independent parameters
@@ -28,7 +33,6 @@ setMethod(f = "plot", signature = "DRM_",
               fcov[,m] = -rowSums(fcov) # of course, this matrix is not full rank
               fcov[m,] = fcov[,m]
               fcov[m,m] = sum(fcov[1:p,1:p])
-              plot(colSums(fcov))
               
               sU = sort(x@U[,1])
               sF = x@Fhat[order(x@U[,1])]
@@ -41,7 +45,7 @@ setMethod(f = "plot", signature = "DRM_",
               cF = cumsum(sF)
               YL = c(min(cF-cumSD),max(cF+cumSD))
               op = par(no.readonly = TRUE); on.exit(par(op))
-              par(mar=c(3,3.25,3,1),mgp = c(1.75,0.5,0),tcl = -0.33)
+              par(mar = c(3,3.25,3,1),mgp = c(1.75,0.5,0),tcl = -0.33)
               plot(sU,cF,ylim = YL,type = "l",col = "#91320a",
                    lty = 4,las = 1,lwd = 3,
                    ylab = expression(hat(P)(Y<=y)),

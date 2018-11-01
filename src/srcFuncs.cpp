@@ -18,7 +18,7 @@ using VecRef = const Eigen::Ref<const Eigen::VectorXd>&;
 
 
 // Object to hold the data plus all current values
-class mdrm{
+class mdrm {
 public:
 
   int n,p,q,nParam,m;
@@ -34,7 +34,7 @@ public:
     n = X.rows();
     p = X.cols();
     q = Y.cols();
-    if(n != Y.rows()){Rcpp::stop("mdrm: Number of outcomes doesn't match number of covariates.");}
+    if(n != Y.rows()){ Rcpp::stop("mdrm: Number of outcomes doesn't match number of covariates."); }
     VectorXi uy(n);
     Uinx = VectorXi(n);
     U = uniq(Y,uy,Uinx);
@@ -124,7 +124,7 @@ MatrixXd mdrm::scores(VecRef th) const { // work in progress
   }
   /*
    for(int z = p*q; z < nParam; z++){
-   res.col(p*q+z) = 1. - Escl.row(z).transpose();
+    res.col(p*q+z) = 1. - Escl.row(z).transpose();
    }
    */
   return res;
@@ -346,7 +346,7 @@ Rcpp::List fitdrm(Rcpp::NumericMatrix inY,Rcpp::NumericMatrix inX,Rcpp::IntegerV
   try {
     opt_param = dfpmin(theta0,D,zc,method,verb,TOL,TOL);
   } catch(std::exception& _ex_){
-    forward_exception_to_r(_ex_);  // hmm, forward_exception_to_r is defined within Rcpp but isn't in Rcpp namespace.
+    forward_exception_to_r(_ex_);
   } catch(std::string errMsg){
     Rcpp::stop(errMsg);
   } catch(const char* errMsg){

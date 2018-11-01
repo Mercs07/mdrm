@@ -4,7 +4,7 @@
 \alias{drmBootstrap}
 \title{Bootstrap estimation of residuals' (co)variance}
 \usage{
-drmBootstrap(formula, data, subset, na.action, B, summarize = FALSE,
+drmBootstrap(formula, data, subset, B, summarize = FALSE,
   contrasts = NULL, fitOptions = list())
 }
 \arguments{
@@ -13,8 +13,6 @@ drmBootstrap(formula, data, subset, na.action, B, summarize = FALSE,
 \item{data}{See corresponding documentation for \code{\link{drm}}}
 
 \item{subset}{See corresponding documentation for \code{\link{drm}}}
-
-\item{na.action}{See corresponding documentation for \code{\link{drm}}}
 
 \item{B}{number of bootstrap replications}
 
@@ -28,8 +26,8 @@ drmBootstrap(formula, data, subset, na.action, B, summarize = FALSE,
 If \code{summarize=TRUE}, a matrix of standard deviations. Otherwise, two lists of length \code{B}: the fitted \eqn{\beta} and corresponding \eqn{\Sigma}
 }
 \description{
-In the case of scaling the estimated coefficients \eqn{\beta} by the residual covariance, estimate
-the standard errors of the scaled parameters via non-parametric bootstrap
+estimate the standard errors of the scaled parameters via non-parametric bootstrap.
+In the case of scaling the estimated coefficients \eqn{\beta} by the residual covariance,
 }
 \details{
 Word of caution: if the data set and/or requested number of bootstrap samples is very large, we may overflow RAM when summarize is
