@@ -18,7 +18,7 @@
 \code{invisible()}; called for its side effect of creating a plot.
 }
 \description{
-\samp{plot(x)} plots the baseline CDF based on the estimated jump sizes \eqn{F}, where \eqn{x} is 
+\code{plot(x)} plots the baseline CDF based on the estimated jump sizes \eqn{F}, where \eqn{x} is 
 an object of class \code{DRM}.
 }
 \details{

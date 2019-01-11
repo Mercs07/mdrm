@@ -20,6 +20,8 @@ drm(formula, data, subset, contrasts = NULL, fitOptions = list())
 \value{
 A DRM object.  Use \code{summary(x)} or \code{plot(x)} to obtain summary information or \code{names(x)} to view all fields, 
 where \code{x} is a drm object. It is an S4 object, so the slots may be explored as usual.
+Note: if there is a failure in the fitting process, an error message is returned along with the parameters.
+A warning but not an error is emitted in this case.
 }
 \description{
 Fits a semi-parametric density ratio model and returns an object of the corresponding class.
@@ -36,9 +38,8 @@ Model fitting is done via Newton's method with the inverse-Hessian approximation
 Several fitting options may be passed in the optional list argument \code{fitOptions}. Order is not important. 
 Named members may include:
 \describe{
-  \item{\code{tol}}{(double), the convergence criterion. This means slightly different things depending on whether \code{method="Brent"} or not.
-In the first case, convergence is defined as \deqn{2*\|f_{old}-f_{new}\|\leq\|f_{old}\|+\|f_{new}\|+\epsilon}
-Otherwise, we directly compare the Euclidean norm of the gradient to \code{tol}.}
+\item{\code{tol}}{(double) Convergence criterion. Must be positive; see conv_method below for interpretation.
+If standard errors of the distribution of F are important, this value may need to be rather small (say 1e-10).}
 \item{\code{maxit}}{(integer), maximum number of iterations.}
 \item{\code{verbosity}}{(unsigned integer) controls diagnostic output shown during model fitting (higher gives more output and zero gives none).}
 \item{\code{maxStep}}{(double), a parameter passed to the line search algorithm which may affect the max. step size. Only
@@ -51,10 +52,15 @@ parameter in this model, intercept parameter(s) cannot be fixed at zero in this 
 \item{\code{method}}{(string) If "Brent", uses Brent's method to find a suitable objective function decrease in the current search direction.
 Otherwise, uses a cubic approximation to fulfill the Wolfe conditions. Both methods use the BFGS Quasi-Newton algorithm to pick
 candidate directions. The 'Brent' method seems to be a little more stable for this problem, but both should yield the same estimates.}
+\item{\code{conv_method}}{(string) The convergence criterion. For value 'func', convergence is defined as 
+\deqn{2*\|f_{old}-f_{new}\|\leq\|f_{old}\|+\|f_{new}\|+\epsilon}.
+Otherwise, we directly compare the Euclidean norm of the gradient to \code{tol}.}
 }
 Defaults are \code{list(1.0e-4,150,0,10,FALSE,0L,"Brent")}, respectively.
 Other elements in \code{fitOptions} will not raise an error, but they are ignored. Option names are not case-sensitive.
 }
 \seealso{
-\code{\link[mdrm:summary-DRM-method]{summary}}, \code{\link[mdrm:plot-DRM-missing-method]{plot}}, \code{\link[mdrm:names-DRM-method]{names}}
+\code{\link[mdrm:summary-DRM-method]{summary}}, 
+\code{\link[mdrm:plot-DRM-missing-method]{plot}}, 
+\code{\link[mdrm:names-DRM-method]{names}}
 }

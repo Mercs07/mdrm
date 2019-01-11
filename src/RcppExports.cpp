@@ -20,6 +20,19 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// yhat
+Rcpp::NumericMatrix yhat(Rcpp::NumericMatrix yy, Rcpp::NumericMatrix xx, Rcpp::NumericVector theta);
+RcppExport SEXP _mdrm_yhat(SEXP yySEXP, SEXP xxSEXP, SEXP thetaSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type yy(yySEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type xx(xxSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type theta(thetaSEXP);
+    rcpp_result_gen = Rcpp::wrap(yhat(yy, xx, theta));
+    return rcpp_result_gen;
+END_RCPP
+}
 // LL
 double LL(const Eigen::VectorXd th, const Eigen::MatrixXd X, const Eigen::MatrixXd Y);
 RcppExport SEXP _mdrm_LL(SEXP thSEXP, SEXP XSEXP, SEXP YSEXP) {
@@ -87,8 +100,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // fitdrm
-Rcpp::List fitdrm(Rcpp::NumericMatrix inY, Rcpp::NumericMatrix inX, Rcpp::IntegerVector zero_index, double TOL, int MAXIT, int verb, const std::string method, bool justBeta);
-RcppExport SEXP _mdrm_fitdrm(SEXP inYSEXP, SEXP inXSEXP, SEXP zero_indexSEXP, SEXP TOLSEXP, SEXP MAXITSEXP, SEXP verbSEXP, SEXP methodSEXP, SEXP justBetaSEXP) {
+Rcpp::List fitdrm(Rcpp::NumericMatrix inY, Rcpp::NumericMatrix inX, Rcpp::IntegerVector zero_index, double TOL, int MAXIT, int verb, const std::string method, bool justBeta, const std::string conv);
+RcppExport SEXP _mdrm_fitdrm(SEXP inYSEXP, SEXP inXSEXP, SEXP zero_indexSEXP, SEXP TOLSEXP, SEXP MAXITSEXP, SEXP verbSEXP, SEXP methodSEXP, SEXP justBetaSEXP, SEXP convSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -100,7 +113,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type verb(verbSEXP);
     Rcpp::traits::input_parameter< const std::string >::type method(methodSEXP);
     Rcpp::traits::input_parameter< bool >::type justBeta(justBetaSEXP);
-    rcpp_result_gen = Rcpp::wrap(fitdrm(inY, inX, zero_index, TOL, MAXIT, verb, method, justBeta));
+    Rcpp::traits::input_parameter< const std::string >::type conv(convSEXP);
+    rcpp_result_gen = Rcpp::wrap(fitdrm(inY, inX, zero_index, TOL, MAXIT, verb, method, justBeta, conv));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -125,12 +139,13 @@ END_RCPP
 
 static const R_CallMethodDef CallEntries[] = {
     {"_mdrm_cdF", (DL_FUNC) &_mdrm_cdF, 4},
+    {"_mdrm_yhat", (DL_FUNC) &_mdrm_yhat, 3},
     {"_mdrm_LL", (DL_FUNC) &_mdrm_LL, 3},
     {"_mdrm_LLF", (DL_FUNC) &_mdrm_LLF, 3},
     {"_mdrm_gradA", (DL_FUNC) &_mdrm_gradA, 3},
     {"_mdrm_gradF", (DL_FUNC) &_mdrm_gradF, 3},
     {"_mdrm_drmHess", (DL_FUNC) &_mdrm_drmHess, 4},
-    {"_mdrm_fitdrm", (DL_FUNC) &_mdrm_fitdrm, 8},
+    {"_mdrm_fitdrm", (DL_FUNC) &_mdrm_fitdrm, 9},
     {"_mdrm_drmBoot", (DL_FUNC) &_mdrm_drmBoot, 8},
     {NULL, NULL, 0}
 };

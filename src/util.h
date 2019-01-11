@@ -37,6 +37,9 @@ VectorXi sample(const int N,const int size);
  */
 MatrixXd uniq(MatRef Y,VectorXi& uniqCnt,Eigen::Ref<Eigen::VectorXi> inxMap);
 
+// overloaded version which does not bother with tracking indices
+MatrixXd uniq(MatRef Y,VectorXi& uniqCnt);
+
 template<int T> // T is -1 for Matrix (Eigen::Dynamic) or 1 (VectorXd) (or another constexpr)
 void printrng(Eigen::Matrix<double,Eigen::Dynamic,T>& M,const char* name){
   Rcpp::Rcout << "Range of " << name << ": " << M.minCoeff() << ", " << M.maxCoeff() << std::endl;
@@ -56,7 +59,7 @@ inline MatrixXd AtA(MatRef A){
 }
 
 // compute OLS beta using LLT decomposition.
-MatrixXd betaFit(MatRef Y,MatRef X);
+MatrixXd betaFit(MatRef Y,MatRef X,bool add_intercept);
 
 // sample covariance matrix
 MatrixXd cov(MatRef X);

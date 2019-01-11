@@ -5,6 +5,10 @@ cdF <- function(uu, ff, verbose = 0L, bs = TRUE) {
     .Call('_mdrm_cdF', PACKAGE = 'mdrm', uu, ff, verbose, bs)
 }
 
+yhat <- function(yy, xx, theta) {
+    .Call('_mdrm_yhat', PACKAGE = 'mdrm', yy, xx, theta)
+}
+
 LL <- function(th, X, Y) {
     .Call('_mdrm_LL', PACKAGE = 'mdrm', th, X, Y)
 }
@@ -25,8 +29,8 @@ drmHess <- function(th, X, Y, useF = TRUE) {
     .Call('_mdrm_drmHess', PACKAGE = 'mdrm', th, X, Y, useF)
 }
 
-fitdrm <- function(inY, inX, zero_index, TOL = 0., MAXIT = 100L, verb = 0L, method = "Brent", justBeta = FALSE) {
-    .Call('_mdrm_fitdrm', PACKAGE = 'mdrm', inY, inX, zero_index, TOL, MAXIT, verb, method, justBeta)
+fitdrm <- function(inY, inX, zero_index, TOL = 0., MAXIT = 100L, verb = 0L, method = "Brent", justBeta = FALSE, conv = "func") {
+    .Call('_mdrm_fitdrm', PACKAGE = 'mdrm', inY, inX, zero_index, TOL, MAXIT, verb, method, justBeta, conv)
 }
 
 drmBoot <- function(y, x, nBoot, zero_index, TOL = 0, MAXIT = 100L, verb = 0L, method = "Brent") {

@@ -21,37 +21,36 @@ using VecRef = const Eigen::Ref<const Eigen::VectorXd>&;
 class mdrm {
 public:
 
-  int n,p,q,nParam,m;
-  bool initialized;
-  double stpmax;  // the max. step size in lineSearch
-  MatrixXd X,Y,U; // data members
-  int verbosity;  // keep order of declaration consistent with order in constructor initializer list
-  VectorXd uc;    // counts of unique values
+  const MatrixXd X, Y; // data members
+  const int n, p, q, verbosity;
   VectorXi Uinx;
+  const MatrixXd U;
+  const VectorXd uc;    // counts of unique values
+  const int m, nParam;
+  
   mdrm() = delete;
 
-  mdrm(MatRef xx,MatRef yy,int verb) : X(xx), Y(yy), verbosity(verb){
-    n = X.rows();
-    p = X.cols();
-    q = Y.cols();
+  mdrm(MatRef xx,MatRef yy,int verb) : X(xx), Y(yy), n(X.rows()), p(X.cols()), q(Y.cols()),
+    verbosity(verb), Uinx(n), U(uniq(Y,Uinx)), uc(Uinx.cast<double>()), m(U.rows()),
+    nParam(p*q + m - 1) {
     if(n != Y.rows()){ Rcpp::stop("mdrm: Number of outcomes doesn't match number of covariates."); }
-    VectorXi uy(n);
-    Uinx = VectorXi(n);
-    U = uniq(Y,uy,Uinx);
-    m = U.rows();
-    uc = uy.cast<double>();
-    nParam = p*q + m - 1;
-    initialized = true;
   }
 
   double operator()(VecRef th) const { // negative log-likelihood, scaled by sample size
     const MatrixXd XB( X*unVectorize(th.tail(p*q),q) );
     VectorXd alp(m);
     alp.head(m-1) = th.head(m-1); alp(m-1) = 0.;
-    const ArrayXXd E( ((U*XB.transpose()).colwise() + alp).array().exp() );  // m x n array
-    double lik = (Y.cwiseProduct(XB)).sum() + uc.dot(alp) -  (E.colwise().sum()).log().sum();
+    // likelihood is called often enough and fairly simple, so we can avoid O(n^2) malloc with this simple for loop
+    // df() could also be re-written thusly but it's a lot more complicated since we use E in three different calcuations
+    double lik = (Y.cwiseProduct(XB)).sum() + uc.dot(alp);
+    ArrayXd ip(m);
+    for(int i=0;i<n;++i){
+        ip = U*(XB.row(i).transpose()) + alp;
+        lik -= std::log(ip.exp().sum());
+    }
     return (-1.0/n)*lik;
   }
+  
   void df(VecRef th,Eigen::Ref<VectorXd> gg) const; // first arg: current parameters. second arg: vector which stores gradient
   VectorXd gradF(VecRef th) const;
   MatrixXd yhat(VecRef theta) const { // calculate predicted values for given parameters Use these to calculate residual covariance, goodness of fit, etc.
@@ -79,6 +78,21 @@ void mdrm::df(VecRef th,Eigen::Ref<Eigen::VectorXd> gg) const { // negative grad
     gg(m-1+z) = X.col(z%p).dot(YEU.col(z/p));
   }
   gg *= (-1./n);
+}
+
+// [[Rcpp::export]]
+Rcpp::NumericMatrix yhat(Rcpp::NumericMatrix yy,Rcpp::NumericMatrix xx,Rcpp::NumericVector theta){
+  const MapMxd X(Rcpp::as<MapMxd>(xx));
+  const MapMxd Y(Rcpp::as<MapMxd>(yy));
+  // kloodgy workaround, but we don't need to worry about efficiency here
+  const int nX = X.rows();
+  MatrixXd Xuse(MatrixXd::Zero(Y.rows(),X.cols()));
+  Xuse.topRows(nX) = X;
+  const MapVxd th(Rcpp::as<MapVxd>(theta));
+  const mdrm mm(Xuse,Y,0);
+  if(th.size() != mm.nParam) Rcpp::stop("yhat: input parameters theta is incorrectly sized.");
+  MatrixXd res = mm.yhat(th).topRows(nX);
+  return Rcpp::wrap(res);
 }
 
 VectorXd mdrm::gradF(VecRef th) const { // gradient with respect to F, for testing purposes with d2LLF
@@ -147,7 +161,7 @@ double LLF(const Eigen::VectorXd th,const Eigen::MatrixXd X,const Eigen::MatrixX
   VectorXd F(D.m);
   F.head(D.m-1) = th.head(D.m-1);
   F(D.m-1) = 1. - F.head(D.m-1).sum();
-  if(F.minCoeff() <= 0) Rcpp::stop("Input parameters don't form a distribution!");
+  if(F.minCoeff() < 0.) Rcpp::stop("Input parameters don't form a distribution!");
   MatrixXd beta(unVectorize(th.tail(D.p*D.q),D.q));
   MatrixXd XB(X*beta);
   double ll0 = (Y.array()*XB.array()).sum();
@@ -291,12 +305,16 @@ void d2LLF(const mdrm& D,VecRef theta,Ref<MatrixXd> H){
 // [[Rcpp::export]]
 Rcpp::NumericMatrix drmHess(const Eigen::VectorXd th,const Eigen::MatrixXd X,const Eigen::MatrixXd Y,bool useF = true){
   const mdrm D(X,Y,0);
-  if(th.size() != D.nParam){Rcpp::stop("Incompatibly sized parameter vector.");}
+  if(th.size() != D.nParam){
+    std::string errmsg = "drmHess: parameter vector has ";
+    errmsg += std::to_string(th.size()) + ", but the model should have " + std::to_string(D.nParam) + ".";
+    Rcpp::stop(errmsg);
+  }
   MatrixXd res(th.size(),th.size());
   if(useF){
     // ensure jump size parameters are OK:
     VectorXd tF(th.head(D.m-1));
-    if(tF.minCoeff() <= 0 || tF.sum() >= 1.0) Rcpp::stop("Input parameter isn't a distribution!");
+    if(tF.minCoeff() <= 0 || tF.sum() >= 1.0) Rcpp::stop("Input parameter isn't a distribution! Note that last jump size is calculated");
     d2LLF(D,th,res);
   } else {
     d2LL(D,th,res);
@@ -316,26 +334,23 @@ VectorXd A2F(VecRef alpha){
 
 // get an initial (linear model) estimate of betas. We hope at least sign is correct for univariate Y.
 VectorXd beta0(const mdrm& D){
-  MatrixXd X1(D.n,D.p+1); // initial estimate needs X and a column of ones
-  X1.col(0) = VectorXd::Constant(D.n,1.0);  // intercept
-  X1.rightCols(D.p) = D.X;
-  MatrixXd bhat{ betaFit(D.Y,X1).bottomRows(D.p) }; // remove intercept row
+  MatrixXd bhat( betaFit(D.Y,D.X,true).bottomRows(D.p) ); // remove intercept row
   double maxAbs = bhat.array().abs().maxCoeff();
   if(maxAbs > 2.) bhat *= 2./maxAbs; // betas capped at |2|
-  if(D.verbosity > 1){ Rcpp::Rcout << "The initial betas:\n" << bhat << std::endl; }
+  if(D.verbosity > 1){ Rcpp::Rcout << "Initial betas:\n" << bhat << std::endl; }
   return vectorize(bhat);
 }
 
 //[[Rcpp::export]]
 Rcpp::List fitdrm(Rcpp::NumericMatrix inY,Rcpp::NumericMatrix inX,Rcpp::IntegerVector zero_index,
-  double TOL = 0.,int MAXIT = 100,int verb = 0,const std::string method = "Brent",bool justBeta = false){
+  double TOL = 0.,int MAXIT = 100,int verb = 0,const std::string method = "Brent",bool justBeta = false,const std::string conv = "func"){
   using Rcpp::Named;
   const MapMxd X(Rcpp::as<MapMxd>(inX));
   const MapMxd Y(Rcpp::as<MapMxd>(inY));
   MapVxi zc(Rcpp::as<MapVxi>(zero_index));
   const mdrm D(X,Y,verb);
   VectorXd theta0(D.nParam);
-  theta0.head(D.m - 1) = 0.5*ArrayXd::Random(D.m - 1); // randomly initialized alpha in (-0.5, 0.5) range.
+  theta0.head(D.m - 1) = 0.25*ArrayXd::Random(D.m - 1); // randomly initialized alpha in (-0.25, 0.25) range.
   theta0.tail(D.p*D.q) = beta0(D); // initialize beta to linear approximation
   if(TOL < 1.0e-10) TOL = 1.0e-5*sqrt(D.nParam); // though TOL has a default, it's interpretation is different for the two methods
   if(zc.maxCoeff() > -1){
@@ -343,18 +358,25 @@ Rcpp::List fitdrm(Rcpp::NumericMatrix inY,Rcpp::NumericMatrix inX,Rcpp::IntegerV
     if(verb > 0) Rcpp::Rcout << "Zero indices @ " << zc.transpose() << "; length of parameter vector is " << D.nParam << std::endl;
   }
   funcMin opt_param;
-  try {
-    opt_param = dfpmin(theta0,D,zc,method,verb,TOL,TOL);
+  try { // the whole minimization should no longer throw exceptions, however we should expect the expected which is an unexpected failure
+    opt_param = dfpmin(theta0,D,zc,method,verb,TOL,TOL,conv);
   } catch(std::exception& _ex_){
-    forward_exception_to_r(_ex_);
+    //forward_exception_to_r(_ex_); // NOTE this does not unwind destructors safely, see https://github.com/RcppCore/Rcpp/issues/753
+    Rcpp::stop(_ex_.what()); // "What, I say what has gone wrong?" - Foghorn Leghorn
   } catch(std::string errMsg){
-    Rcpp::stop(errMsg);
+    Rcpp::stop(errMsg.c_str());
   } catch(const char* errMsg){
     Rcpp::stop(errMsg);
   } catch(...){
     ::Rf_error("c++ exception (unknown reason!)");
   }
   theta0 = opt_param.arg_min;
+  if(opt_param.error != dfpmin_error::NONE){
+    Rcpp::CharacterVector errmsg(1);
+    errmsg[0] = dfpmin_err_msg::messages[opt_param.error-1];
+    return Rcpp::List::create(Named("error") = errmsg,Named("parameters") = Rcpp::wrap(theta0));
+  }
+
   const MatrixXd resid = D.Y - D.yhat(theta0);
   VectorXd Fhat = A2F(theta0.head(D.m-1));
   MatrixXd betahat = unVectorize(theta0.tail(D.p*D.q),D.q);
@@ -377,8 +399,9 @@ Rcpp::List fitdrm(Rcpp::NumericMatrix inY,Rcpp::NumericMatrix inX,Rcpp::IntegerV
   }
   // calculating covariance parameters
   double nd = static_cast<double>(D.n);
-  MatrixXd Ha(D.nParam,D.nParam),Hf(D.nParam,D.nParam); // standard errors for both alpha and F
-  d2LL(D,theta0,Ha); // observed information with alpha
+  //MatrixXd Ha(D.nParam,D.nParam), // standard errors for both alpha and F
+  MatrixXd Hf(D.nParam,D.nParam);
+  //d2LL(D,theta0,Ha); // observed information with alpha
   VectorXd thF = theta0;
   thF.head(D.m-1) = Fhat.head(D.m-1);
   d2LLF(D,thF,Hf); // observed information with F
@@ -386,8 +409,11 @@ Rcpp::List fitdrm(Rcpp::NumericMatrix inY,Rcpp::NumericMatrix inX,Rcpp::IntegerV
   MatrixXd covF = -Hf.inverse()/nd;
   VectorXd varF = covF.diagonal();
   if(any_nan(varF) || varF.minCoeff() < 0.){
-    Rcpp::Rcout << "Bad values in varF!! Returning for diagnosis\n";
-    return Rcpp::List::create(varF);
+    Rcpp::CharacterVector errmsg(1);
+    errmsg[0] = "Bad values in varF!! Returning for diagnosis\n";
+    return Rcpp::List::create(Named("error") = errmsg,
+                              Named("parameters") = Rcpp::wrap(theta0),
+                              Named("varF") = Rcpp::wrap(varF));
   }
   VectorXd b0sd(VectorXd::Zero(D.q));
   MatrixXd HF = covF.topLeftCorner(D.m-1,D.m-1), u1(D.U.topRows(D.m-1));

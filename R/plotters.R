@@ -4,7 +4,7 @@
 
 #' plot the empirical baseline distribution function.	
 #'
-#' \samp{plot(x)} plots the baseline CDF based on the estimated jump sizes \eqn{F}, where \eqn{x} is 
+#' \code{plot(x)} plots the baseline CDF based on the estimated jump sizes \eqn{F}, where \eqn{x} is 
 #' an object of class \code{DRM}.
 #'
 #' The number of distinct jumps equals the number of unique \eqn{Y} observations (calculated row-wise if 
@@ -19,6 +19,10 @@
 #' @param ... ignored; part of function signature for compatibility with S3 method.
 #' @return \code{invisible()}; called for its side effect of creating a plot.
 #' @seealso \code{\link{drm}}
+#' @importFrom scales alpha
+#' @importFrom viridis viridis
+#' @importFrom graphics par plot abline polygon image title
+#' @importFrom stats qnorm
 #' @export
 setMethod(f = "plot", signature = signature(x = "DRM", y = "missing"),
           definition = function(x,y,...){
@@ -57,10 +61,10 @@ setMethod(f = "plot", signature = signature(x = "DRM", y = "missing"),
                       col = scales::alpha(3,0.5))
             } else { # two columns
               Ugrid = cdF(x@U,x@Fhat,0,TRUE)
-              par(mar = c(3.5,3.5,0,0),mgp = c(2.25,0.5,0),tcl=-0.33)
+              par(mar = c(3.25,3.25,0,0),mgp = c(2,0.5,0),tcl=-0.33)
               image(x = Ugrid$ux,y = Ugrid$uy,z = Ugrid$cdf,
-                    col = viridis::viridis(40),las = 1)
-              title(xlab = colnames(x@U)[1],ylab = colnames(x@U)[2])
+                    col = viridis::viridis(40),las = 1,
+                    xlab = colnames(x@U)[1],ylab = colnames(x@U)[2])
             }
             invisible()
           })

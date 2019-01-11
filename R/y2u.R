@@ -72,6 +72,9 @@ mbin = function(disc,cont,p = 0.5){
 #' c(cor(U2[,1],YY[,1]),cor(U2[,2],YY[,2]))
 #' }
 #' 
+#' @importFrom hexbin hexbin
+#' @importFrom graphics points mtext
+#' @importFrom stats median
 #' @export
 
 Y2U = function(Y,p = 0.5,plot = FALSE){

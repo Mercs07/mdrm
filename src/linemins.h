@@ -27,7 +27,7 @@ using refVec = Eigen::Ref<Eigen::VectorXd>;
 
 // this is decidedly *not* the standard 'sign' function but is a tuft of vestigial kruft from NR
 template<typename T>
-inline T SIGN(T a,T b){
+inline T SIGN(const T a,const T b){
   static_assert(std::is_arithmetic<T>::value,"SIGN expects a single, numeric argument.");
 	return b > 0. ? std::abs(a) : -std::abs(a);
 }
@@ -45,9 +45,39 @@ inline double calc_test(VecRef x,VecRef y){
   return z.maxCoeff();
 }
 
+// track errors and deal with them sensibly
+// the functions which might "throw" these errors are cubic_linemin and brent.
+// maybe better to combine these to a static map?
+enum dfpmin_error : unsigned int {
+  NONE,
+  MAX_ITERATION,
+  POSITIVE_SLOPE,
+  NON_FINITE_VALUE,
+  BRENT_ERROR,
+  CUBIC_ERROR
+};
+
+struct dfpmin_err_msg {
+  static const char* messages[];
+};
+const char* dfpmin_err_msg::messages[] = {
+  "too many iterations in dfpmin",
+  "roundoff error in cubic linesearch (positive slope)",
+  "NaN/infinite value in parameters",
+  "error in Brent linemin routine",
+  "error in Cubic linemin routine"
+};
+
+// the return value of dfpmin
+struct funcMin{
+  dfpmin_error error;
+  int iterations;
+  double min_value;
+  Eigen::VectorXd arg_min,gradient;
+};
+
 // bracket an set of initial values with opposite signs for use in Brent's methods
-//void mnbrak(double *ax,double *bx,double *cx,double *fa,double *fb,double *fc,double (*func)(double));
-// the 'UnaryOp' argument may be passed as a lambda, etc. but must have overloaded double operator(double)
+// the 'UnaryOp' argument may be passed as a lambda, etc. but must have overloaded double operator()(double)
 template<typename UnaryOp>
 void mnbrak(double *ax,double *bx,double *cx,double *fa,double *fb,double *fc,UnaryOp func){
   constexpr double GOLD = 1.618034, GLIMIT = 100., TINY = 1.0e-20;
@@ -99,12 +129,13 @@ void mnbrak(double *ax,double *bx,double *cx,double *fa,double *fb,double *fc,Un
 }
 
 // first 3 args are bounds attained from mnbrak
-// double brent(const double ax,const double bx,const double cx,const double tol,double (*f)(double),double *xmin);
 template<typename UnaryOp>
-double brent(const double ax,const double bx,const double cx,const double tol,double* xmin,UnaryOp func){
+double brent(const double ax,const double bx,const double cx,const double tol,
+  double* xmin,UnaryOp func,dfpmin_error& err){
   constexpr size_t ITMAX{100u};
   constexpr double CGOLD{0.3819660}, ZEPS{1.0e-10};
-  //const double f0 = (*f)(bx);
+  err = dfpmin_error::NONE;
+
   const double f0 = func(bx);
   double d{0.}, e{0.}, etemp;
   double u, v{bx}, w{bx}, x{bx};  // search points
@@ -160,7 +191,7 @@ double brent(const double ax,const double bx,const double cx,const double tol,do
       }
     }
   }
-  throw("Too many iterations in BRENT");
+  err = dfpmin_error::BRENT_ERROR;
   *xmin = x; // caller of brent needs access to this
   return fx;
 }
@@ -176,13 +207,6 @@ void BFGS(Eigen::Ref<Eigen::MatrixXd> H,VecRef dth,VecRef dgr){
   H.selfadjointView<Eigen::Lower>().rankUpdate(dth,k); // rank 'K' update with a K-column matrix u (and alpha scalar)
 }
 
-// the return value of dfpmin...just a convenience wrapper to avoid 500 'output parameters'
-struct funcMin{
-  int iterations,error;
-  double min_value;
-  Eigen::VectorXd arg_min,gradient;
-};
-
 /*
  * Arguments: xold are the current parameter values, and fold is the current objective function value
  * g is the gradient at xold
@@ -190,32 +214,30 @@ struct funcMin{
  * x holds the updated point upon return (the goal is func(x) < func(xold))
  */
 template <class T>
-void cubic_linemin(VecRef xold, const double fold, VecRef g,refVec p,refVec x,double& f,double stpmax,bool& check,const T& func){
+dfpmin_error cubic_linemin(VecRef xold, const double fold, VecRef g,refVec p,refVec x,double& f,
+  double stpmax,const T& func) {
 
   constexpr double alpha{1.0e-4}, TOLX{std::pow(std::numeric_limits<double>::epsilon(),0.67)};
-  const double p_norm = p.norm(); // alpha is min. *relative* decrease we require
+  constexpr int maxit = 200; // provide some guard against infinite loop
+
+  const double p_norm = p.norm();
   if(stpmax <= 0.) stpmax = 1.0;
   if(p_norm > stpmax) p *= stpmax/p_norm;
   const double slope = g.dot(p);
-  if(slope >= 0.){
-    std::stringstream errMsg;
-    errMsg << "Roundoff problem in cubic_linemin: slope is " << slope << "but should be negative!" << std::endl;
-    throw(errMsg.str()); // is it really a """roundoff""" problem?
-  }
+  if(slope >= 0.) return dfpmin_error::POSITIVE_SLOPE;
+
   double rhs1,rhs2,tmplam,a,lambda = 1.0,alam2 = 0.0,b,disc,f2 = 0.0;
-  const int maxit = 200; // provide some guard against infinite loop
-  check = false;
   const double min_lambda = TOLX/calc_test(p,xold);
   
   for(int i=0;i<maxit;++i){
     x = xold + lambda*p;
     f = func(x);
-    if(lambda < min_lambda){
+    if(lambda < min_lambda && i > 5){
+      Rcpp::Rcout << "lambda issues at i = " << i << " and lambda = " << lambda << "!\n";
       x = xold;
-      check = true; // flag that the objective function can't be reliably increased in the given search direction, at least with this convoluted approach
-      return;
+      return dfpmin_error::CUBIC_ERROR;
     } else if(f <= fold + alpha*lambda*slope){ // what we want: sufficient function decrease
-      return;
+      return dfpmin_error::NONE;
     } else {  // keep searching: calculate a polynomial interpolation to guess where a local min. might be
       if(lambda == 1.0) tmplam = -slope/(2.0*(f-fold-slope)); // first time through; quadratic approximation
       else {                                                // otherwise, do a cubic interpolation when we have sufficient data
@@ -238,7 +260,7 @@ void cubic_linemin(VecRef xold, const double fold, VecRef g,refVec p,refVec x,do
     f2 = f;
     lambda = std::max(tmplam,0.1*lambda); // limit the rate of shrinkage to 90% per round
   }
-  throw("line search exceeded max. iterations");
+  return dfpmin_error::MAX_ITERATION; // final return path is an error path
 }
 
 template<typename T>
@@ -271,7 +293,9 @@ double brent_linemin<T>::linemin(VectorXd& p,VecRef dir0){
   ax = 0.; bx = 1e-3; cx = 2.0;   // re-set the marker variables
   mnbrak(&ax,&bx,&cx,&fa,&fb,&fc,[&](double a) -> double{ return this->f1dim(a); }); // now ax,bx,cx are (hopefully) filled with something good
   
-  fv = brent(ax,bx,cx,TOL,&xmin,[&](double a) -> double{ return this->f1dim(a); }); // xmin is the alpha value which minimized in the search direction
+  dfpmin_error e;
+  fv = brent(ax,bx,cx,TOL,&xmin,[&](double a) -> double{ return this->f1dim(a); },e); // xmin is the alpha value which minimized in the search direction
+  if(e != dfpmin_error::NONE) Rcpp::stop("Error in Brent linemin routine.");
   double max_dir = search_dir.array().abs().maxCoeff();
   if (max_dir >= 50) xmin = 1.0/max_dir; // lower bound of 0.02, hmmm....
   param += search_dir*xmin;
@@ -280,67 +304,68 @@ double brent_linemin<T>::linemin(VectorXd& p,VecRef dir0){
 }
 
 /*
- * A simple class to hold the logic of performing line minimization via Brent's method
- * the 'dfpmin' part of it is kept separate since we don't always necessarily want to use the 
- * Hessian updating scheme. Likewise, the functions mnbrak and brent are not put into this class
- * since they are nice, self-contained functions.
+ * A simple class to hold the logic of performing line minimization with BFGS updating
+ * The line minimization routines are factored out since they're conceptually separate and can be viewed as a black box from this function.
  * So, the point of this is to provide a consistent interface vis-a-vis the other line search approach;
  * then either one can be harnessed by the same dfpmin() code.
  * and might be parallelized easily
+ * 
+ * Ultimately, this should be refactored to have a second template argument which is the line minimization class instance,
+ * so that anything can be plugged in so long as it has some basic API, ex. a search() method which takes the
+ * current point + direction and returns a new point.
  */
 template<typename T>
-funcMin dfpmin(VectorXd& p0,const T& funcd,const Eigen::Ref<const Eigen::VectorXi>& zc,const std::string& method = "Brent",int verb = 0,double ftol = 0.,double gtol = 0.){
+funcMin dfpmin(VectorXd& p0,const T& funcd,const Eigen::Ref<const Eigen::VectorXi>& zc,const std::string& method = "Brent",
+      int verb = 0,double ftol = 0.,double gtol = 0.,const std::string& conv_method = "func"){
   using namespace Eigen;
   using Rcpp::Rcout;
   constexpr double EPS = 1.0e-10;
   const int ITMAX = 200, n = p0.size();
-  bool check, zeros = zc(0) >= 0;     // do we need to futz around with setting things to zero? (if fitting a constrained model)
+  bool zeros = zc(0) >= 0;     // do we need to futz around with setting things to zero? (if fitting a constrained model)
   if(zeros) setZeros(p0,zc);
 
+  funcMin R;
+  R.error = dfpmin_error::NONE;
+  dfpmin_error e;
   brent_linemin<T> BL(funcd,ftol);
-  double max_step = p0.array().abs().maxCoeff();
-  
-  int its, error = 1, psz = std::min(10,n);
+  double max_step = std::min(1.,p0.array().abs().maxCoeff());
+  int its, psz = std::min(10,n);
 
-  double test, fret, fp = funcd(p0); // starting value of the objective function
+  double test, fret = funcd(p0), fp = funcd(p0); // starting value of the objective function
   MatrixXd hessian( MatrixXd::Identity(n,n) );
   VectorXd g(n), oldg(n), hdg(n), p(p0), pnew(p0), pdiff(n);
-  funcd.df(p,g);
+  funcd.df(p,g); // update g
   if(zeros) setZeros(g,zc);
   VectorXd xi{-g};  // initial candidate search direction
-  for(its = 0;its < ITMAX;its++){
+  for(its = 0;its < ITMAX;++its){
     if(verb > 0){
-      Rcout << "\n*****\n   Iteration " << its << std::endl;
-      if(verb > 1){ Rcout << "theta = " << p.head(psz).transpose() << std::endl; }
-      Rcout << "objective function value: " << fret << std::endl;
-      Rcout << "gradient norm: " << g.norm() << std::endl ;
+      Rcout << "\n*****\n   Iteration " << its << '\n';
+      if(verb > 1){ Rcout << "tail(theta) = " << p.tail(psz).transpose() << '\n'; }
+      Rcout << "objective function value: " << fret << '\n';
+      Rcout << "gradient norm: " << g.norm() << std::endl;
     }
     if(method == "Brent"){
       fret = BL.linemin(pnew,xi);
     } else {
-      cubic_linemin(pnew,fp,g,xi,pnew,fret,max_step,check,funcd);
+      e = cubic_linemin(p,fp,g,xi,pnew,fret,max_step,funcd);
     }
-    if(any_nan(p)){
-      if(verb) Rcout << "Encountered non-finite values in parameter estimate!" << std::endl;
-      error = 1;
-      break;
-    }
-    // check whether 2*|newP-oldP| <= ftol*[|oldP| + |newP| + 1.0E-10] as the convergence criterion
-    // there's no reason to associate the return criterion with the linemin method; rework this
-    if (method=="Brent" && 2.0*std::abs(fret-fp) <= ftol*(std::abs(fret) + std::abs(fp)+EPS)) {
-      if(verb > 0){
-        Rcout << "\nfret - fp = " << fret - fp << ", under convergence criterion of " << ftol*(std::abs(fret)+std::abs(fp)+EPS) << "\n";
+    if(any_nan(p)) R.error = dfpmin_error::NON_FINITE_VALUE;
+    if(e != dfpmin_error::NONE) R.error = e;
+    if(R.error != dfpmin_error::NONE) break;
+    // which convergence criterion to use is not adequately explained.
+    if (conv_method=="func"){
+      test = ftol*(std::abs(fret) + std::abs(fp)+EPS);
+      if(2.0*std::abs(fret-fp) <= test) {
+        if(verb > 0) Rcout << "\nfret - fp = " << 2.0*std::abs(fret - fp) << ", under convergence criterion of " << test << std::endl;
+        break;
       }
-      error = 0;
-      break;
     } else {
       test = calc_test(g,p)/std::max(1.0,std::abs(fret));
       if(test < gtol){
-        error = 0;
+        if(verb > 0) Rcpp::Rcout << "Test value " << test << " under gradient tolerance of " << gtol << std::endl;
         break;
       }
     }
-
     fp = fret;
     if(zeros) setZeros(pnew,zc); // this also sets pdiff(zc) zero
     pdiff = pnew - p;
@@ -352,13 +377,13 @@ funcMin dfpmin(VectorXd& p0,const T& funcd,const Eigen::Ref<const Eigen::VectorX
     BFGS(hessian,xi,g-oldg); // update (inverse) Hessian approximation
     xi = -g.adjoint()*hessian.selfadjointView<Eigen::Lower>(); // new search direction -f'/f''
   }
-  if(its == ITMAX) throw("error state in dfpmin: too many iterations");
-  if(error > 0) throw("exceeded iterations in dfpmin"); // should just return an error state instead of throw?
-  funcMin R;
-  R.iterations = its; R.error = error;
+  if(its >= ITMAX) R.error = dfpmin_error::MAX_ITERATION;
+  R.iterations = its;
   R.arg_min = p; R.min_value = fret;
-  funcd.df(p,g);
-  R.gradient = g;
+  if(R.error == dfpmin_error::NONE){
+    funcd.df(p,g);
+    R.gradient = g;
+  }
   return R;
 }
 

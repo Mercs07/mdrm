@@ -8,12 +8,12 @@
 parseDots = function(lst){
   defaults = list("tol" = 1.e-5,"maxit" = 150, "verbosity" = 0,
                   "maxstep" = 10,"justbeta" = FALSE, "method" = "Brent",
-                  "zero_index" = 0L)
+                  "zero_index" = 0L,"conv_method" = "func")
   lst = lst[!sapply(lst,is.null)] # avoid 'if arg. of length zero' error
   if(length(lst)==0) return(defaults)
 
   selected = defaults
-  modes = c("numeric","integer","integer","numeric","logical","character","integer")
+  modes = c("numeric","integer","integer","numeric","logical","character","integer","character")
   names(lst) = tolower(names(lst))
   matchOpt = pmatch(names(lst),names(defaults),nomatch = NA_integer_,duplicates.ok = FALSE)
   if(length(matchOpt)){
@@ -58,9 +58,8 @@ parseDots = function(lst){
 #' Several fitting options may be passed in the optional list argument \code{fitOptions}. Order is not important. 
 #' Named members may include:
 #' \describe{
-#'   \item{\code{tol}}{(double), the convergence criterion. This means slightly different things depending on whether \code{method="Brent"} or not.
-#' In the first case, convergence is defined as \deqn{2*\|f_{old}-f_{new}\|\leq\|f_{old}\|+\|f_{new}\|+\epsilon}
-#' Otherwise, we directly compare the Euclidean norm of the gradient to \code{tol}.}
+#' \item{\code{tol}}{(double) Convergence criterion. Must be positive; see conv_method below for interpretation.
+#' If standard errors of the distribution of F are important, this value may need to be rather small (say 1e-10).}
 #' \item{\code{maxit}}{(integer), maximum number of iterations.}
 #' \item{\code{verbosity}}{(unsigned integer) controls diagnostic output shown during model fitting (higher gives more output and zero gives none).}
 #' \item{\code{maxStep}}{(double), a parameter passed to the line search algorithm which may affect the max. step size. Only
@@ -73,14 +72,21 @@ parseDots = function(lst){
 #' \item{\code{method}}{(string) If "Brent", uses Brent's method to find a suitable objective function decrease in the current search direction.
 #' Otherwise, uses a cubic approximation to fulfill the Wolfe conditions. Both methods use the BFGS Quasi-Newton algorithm to pick
 #' candidate directions. The 'Brent' method seems to be a little more stable for this problem, but both should yield the same estimates.}
+#' \item{\code{conv_method}}{(string) The convergence criterion. For value 'func', convergence is defined as 
+#' \deqn{2*\|f_{old}-f_{new}\|\leq\|f_{old}\|+\|f_{new}\|+\epsilon}.
+#' Otherwise, we directly compare the Euclidean norm of the gradient to \code{tol}.}
 #' }
 #' Defaults are \code{list(1.0e-4,150,0,10,FALSE,0L,"Brent")}, respectively.
 #' Other elements in \code{fitOptions} will not raise an error, but they are ignored. Option names are not case-sensitive.
 #' @return A DRM object.  Use \code{summary(x)} or \code{plot(x)} to obtain summary information or \code{names(x)} to view all fields, 
 #' where \code{x} is a drm object. It is an S4 object, so the slots may be explored as usual.
+#' Note: if there is a failure in the fitting process, an error message is returned along with the parameters.
+#' A warning but not an error is emitted in this case.
 #'
-#' 
-#' @seealso \code{\link[mdrm:summary-DRM-method]{summary}}, \code{\link[mdrm:plot-DRM-missing-method]{plot}}, \code{\link[mdrm:names-DRM-method]{names}}
+#' @seealso \code{\link[mdrm:summary-DRM-method]{summary}}, 
+#' \code{\link[mdrm:plot-DRM-missing-method]{plot}}, 
+#' \code{\link[mdrm:names-DRM-method]{names}}
+#' @importFrom stats model.frame model.matrix is.empty.model model.response pnorm cov cor sd
 #' @export
 drm = function(formula,data,subset,contrasts=NULL,fitOptions=list()){
   cl = match.call()   # this one is just used to return the call along with the model summary
@@ -90,7 +96,7 @@ drm = function(formula,data,subset,contrasts=NULL,fitOptions=list()){
   mf$drop.unused.levels = TRUE
   mf$na.action = "na.omit" # no method of dealing with missing values here
   mf[[1L]] = quote(stats::model.frame)
-  mf = eval(mf, parent.frame())  # creates the model frame
+  mf = eval(mf, parent.frame())
 	mt = attr(mf, "terms")   # passed into model.matrix() instead of a formula
 	# for DRM, we exclude the intercept for the input model matrix, but use it when creating the model matrix so that factors
 	# have the usual baseline constrast interpretation. Non-standard setting of 'contrasts' argument could cause an issue here.
@@ -99,16 +105,18 @@ drm = function(formula,data,subset,contrasts=NULL,fitOptions=list()){
 	yy = as.matrix(model.response(mf, "numeric"))
 	if(is.null(colnames(yy))){ colnames(yy) = paste0("Y",1:ncol(yy)) }
 	xx = model.matrix(mt, mf, contrasts)
-	if("(Intercept)" %in% colnames(xx)) xx = xx[,-c(which(colnames(xx)=="(Intercept)"))]  # explicitly remove intercept
-	if(is.null(colnames(xx))){ colnames(xx) = paste0("X",1:ncol(xx)) }
+	xx = xx[,setdiff(colnames(xx),"(Intercept)")]  # explicitly remove intercept
 	defOpt = parseDots(fitOptions)
-	if(any(is.na(defOpt$zero_index)) || min(defOpt$zero_index,na.rm=TRUE) < 0) stop("drm: Invalid zero indices")
+	zcs = defOpt$zero_index
+	if(any(!is.finite(zcs)) || min(zcs) < 0 || max(zcs) > NCOL(yy)*NCOL(xx)) stop("drm: Invalid zero indices")
 	Obj = DRM(X = xx, Y = yy)  # instantiate class member
-	res = fitdrm(Obj@Y,Obj@X,zero_index = defOpt$zero_index-1,TOL = defOpt$tol, # subtract 1 from zero_index for 0-based indexing in C++
+	res = fitdrm(Obj@Y,Obj@X,zero_index = zcs-1,TOL = defOpt$tol, # subtract 1 from zero_index for 0-based indexing in C++
 	             MAXIT = defOpt$maxit,verb = defOpt$verbosity,method = defOpt$method,
-	             justBeta = defOpt$justbeta)  # "internal" fitting function
-	if(length(res) == 1L){
-		stop("drm: An error occurred in model fitting. Perhaps re-scale the data or try exporing fitOptions.")
+	             justBeta = defOpt$justbeta,conv = defOpt$conv_method)  # "internal" fitting function
+	if("error" %in% names(res)){
+		warning("drm: An error occurred in model fitting: ",res$error,
+		        "\nPerhaps re-scale the data or try exploring fitOptions.")
+	  return(res)
 	}
 	Obj@U = res$U
 	Obj@beta = rbind(res$b0,as.matrix(res$beta))
@@ -129,7 +137,7 @@ drm = function(formula,data,subset,contrasts=NULL,fitOptions=list()){
 	nac = attr(mf,"na.action")
 	Obj@na_omit = if(is.null(nac)) 0L else length(nac)
 	zcs = defOpt$zero_index
-	Obj@zc = if(length(zcs)==1 && zcs[1]==-1) integer(0) else zcs # zero'ed out params display differently in print/summarize
+	Obj@zc = if(length(zcs)==1 && zcs[1L] == 0) integer(0) else zcs # zero'ed out params display differently in print/summarize
 	return(Obj)
 }
 
@@ -231,6 +239,29 @@ setMethod(f = `$`, signature = "DRM",
 	  return(slot(x,name))
 	})
 
+#' Predict method for mdrm object
+#' 
+#' Predict values based on new data or the data used to fit the model
+#' @param object A fitted MDRM object (as returned from \code{mdrm})
+#' @param newdata A \code{data.frame} or \code{matrix} whose model matrix has the same columns as
+#' the one used to fit \code{object}
+#' @param ... other arguments; currently ignored
+#' @return matrix of predicted Y values
+#' @rdname predict-method
+#' @export
+setMethod(f = "predict",signature = "DRM",
+          definition = function(object,newdata,...){
+            Xm = if(missing(newdata)){
+              object@X
+            } else {
+              if(!inherits(newdata,'data.frame')) stop("Argument 'newdata' must be data.frame-like")
+              form_x = as.formula(object@user.call)
+              term_x = delete.response(terms(form_x)) # 'terms' object
+              model.matrix(term_x,data = newdata)[,-c(1)] # chop intercept
+            }
+            yhat(object@Y,Xm,c(object@alpha,object@beta[-1,]))
+          })
+
 #' Get the covariance matrix of model parameters
 #'
 #' This is just a wrapper which returns \code{object@covHat}, the covariance matrix of model parameters.
@@ -244,9 +275,9 @@ setMethod(f = `$`, signature = "DRM",
 #' @rdname vcov-method
 #' @export
 setMethod(f = "vcov",signature = "DRM",
-	definition = function(object,...){
-		return(object@covHat)
-	})
+          definition = function(object,...){
+            return(object@covHat)
+          })
 
 #' Extract log-likelihood
 #' 
@@ -360,12 +391,9 @@ setMethod(f = "fitted",signature = "DRM",
           })
 
 sig_star = function(pv){
-  res = rep("",length(pv))
-  res[pv <= 0.10] = "."
-  res[pv <= 0.05] = "*"
-  res[pv <= 0.01] = "**"
-  res[pv <= 0.001] = "***"
-  res
+  symnum(pv,corr=FALSE,na=FALSE,
+         cutpoints = c(0, 0.001, 0.01, 0.05, 0.1, 1),
+         symbols = c("***", "**", "*", ".", ""))
 }
 	
 makeLine = function(w,contents){
@@ -397,8 +425,12 @@ setMethod(f = "summary", signature = "DRM",
 		cFmt = "%.3f" # controls rounding
 		Q = NCOL(object@beta); P = NROW(object@beta)
 		nameSpacer = max(15,min(max(nchar(colnames(object@X))),25)) # name column is between 15 and 25 characters wide
-		pvalu = matrix(ifelse(object@p.value <= 5e-5,"<0.0001",sprintf("%.4f",object@p.value)),ncol=Q) # rounding of p-values needs extra TLC
-		sigs = matrix(sig_star(c(object@p.value)),ncol=Q)
+		pvalu = matrix(format.pval(object@p.value,digits=3,eps = 1e-3),ncol=Q)
+		sigs = as.matrix(sig_star(object@p.value))
+		sn_leg = attr(sigs,'legend')
+		cwidth = getOption("width")
+		sn_fmt = if(nchar(sn_leg) > cwidth) strwrap(sn_leg,cwidth-3,prefix = "   ") else sn_leg
+		any_sig = colSums(nchar(sigs))
 		zscores = matrix(sprintf(cFmt,object@beta/object@sdbeta),ncol=Q)
 		cat("Call:\n"); print(object@user.call)
 		cat("\nDensity ratio model fit:\n\nCoefficients:\n")
@@ -417,6 +449,10 @@ setMethod(f = "summary", signature = "DRM",
 					cat(paste0("  ",sigs[i,j],"\n")) # significance codes
 				}
 			}
+		  if(any_sig[j]){
+		    cat("---\nSignif. codes:  ", sn_fmt, sep = "",
+		        fill = cwidth + 4 + max(nchar(sn_fmt, "bytes") - nchar(sn_fmt)))  
+		  }
 			cat("\n")
 		}
 		rcov = cov(object@resid)
@@ -454,6 +490,7 @@ drm_loglik = function(oo,tstB){
 #' @docType methods
 #' @rdname lr_test-method
 #' @aliases lr_test,character,ANY-method
+#' @importFrom stats pchisq
 #' @export
 setGeneric(name = "lr_test", def = function(obj,tstMat,literal){standardGeneric("lr_test")})
 

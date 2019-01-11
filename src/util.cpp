@@ -83,6 +83,30 @@ MatrixXd uniq(MatRef Y,VectorXi& uniqCnt,Eigen::Ref<Eigen::VectorXi> inxMap){
   return U.block(0,0,curry,P);
 }
 
+// overloaded version which does not bother with tracking indices
+MatrixXd uniq(MatRef Y,VectorXi& uniqCnt){
+	const int N = Y.rows();
+	uniqCnt.setZero();
+	MatrixXd U  = MatrixXd::Random(N,Y.cols());  // NOTE: for 'safety', do a random initialization
+	int curry = 0; bool match;
+	for(int i=0;i<N;i++){
+		match = false;
+		for(int j=0;j<curry;j++){
+			if(Y.row(i)==U.row(j)){ // we could put an epsilon-close comparison here to make a fuzzy comparison
+				uniqCnt(j)++;
+				match = true;
+				break;
+			}
+		}
+		if(!match){
+			U.row(curry) = Y.row(i);
+			uniqCnt(curry++)++; // get the index for nU first, then increment it (postfix)
+		}
+	}
+	uniqCnt.conservativeResize(curry);
+	return U.topRows(curry);
+}
+
 // sample covariance matrix
 MatrixXd cov(MatRef X){
   const int N = X.rows();
@@ -111,7 +135,15 @@ MatrixXd unVectorize(VecRef vec,const int ncols){
   return mat;
 }
 
-MatrixXd betaFit(MatRef Y,MatRef X){
-  const Eigen::LLT<MatrixXd> thellt(AtA(X)); // compute the Cholesky decomposition of X'X
-  return thellt.solve(X.adjoint()*Y);
+MatrixXd betaFit(MatRef Y,MatRef X,bool add_intercept = false){
+  MatrixXd X1;
+  if(add_intercept){
+    X1 = MatrixXd(X.rows(),X.cols()+1); // initial estimate needs X and a column of ones
+	  X1.col(0) = VectorXd::Constant(X.rows(),1.0);  // intercept
+	  X1.rightCols(X.cols()) = X;
+  } else {
+    X1 = X;
+  }
+  const Eigen::LLT<MatrixXd> thellt(AtA(X1));
+  return thellt.solve(X1.adjoint()*Y).bottomRows(X.cols());
 }
