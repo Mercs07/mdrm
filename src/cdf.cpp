@@ -7,7 +7,6 @@
 // [[Rcpp::plugins(cpp11)]]
 #include<RcppEigen.h>
 
-using namespace Eigen;
 using VecRef = const Eigen::Ref<const Eigen::VectorXd>&;
 using uipair = std::pair<unsigned int,unsigned int>;
 /* 
@@ -57,22 +56,22 @@ void qisort(T *V, int *P, const int leftInx, const int rightInx){
 
 // take a given (dynamic size) Eigen vector of any supported type, sort it, and return a VectorXi map between sorted & original positions
 template<typename T>
-VectorXi EigenSort(Eigen::Matrix<T,Eigen::Dynamic,1>& data){
+Eigen::VectorXi EigenSort(Eigen::Matrix<T,Eigen::Dynamic,1>& data){
 	const int L = data.size();
 	T* vv = &data(0); // pointer to first element of data - we're just traversing memory already laid out in data, so no need to allocate.
-	VectorXi inxs = VectorXi::LinSpaced(L,0,L-1); // initial, zero-based indices
+	Eigen::VectorXi inxs = Eigen::VectorXi::LinSpaced(L,0,L-1); // initial, zero-based indices
 	qisort(vv,&inxs(0),0,L-1);
 	return inxs;
 }
 
 // sort the input matrix by the given column
 template<typename T>
-Matrix<T,Dynamic,Dynamic> sortByCol(Matrix<T,Dynamic,Dynamic> &U,int sort_column){
+Eigen::Matrix<T,Eigen::Dynamic,Eigen::Dynamic> sortByCol(Eigen::Matrix<T,Eigen::Dynamic,Eigen::Dynamic> &U,int sort_column){
 	if(sort_column < 0 || sort_column >= U.cols()){ return U;}
-	Matrix<T,Dynamic,1> V = U.col(sort_column);
-	VectorXi map = EigenSort(V);
+	Eigen::Matrix<T,Eigen::Dynamic,1> V = U.col(sort_column);
+	Eigen::VectorXi map = EigenSort(V);
 	const int R = U.rows();
-	Matrix<T,Dynamic,Dynamic> res(R,U.cols());
+	Eigen::Matrix<T,Eigen::Dynamic,Eigen::Dynamic> res(R,U.cols());
 	for(int i=0;i<R;i++){
 		res.row(i) = U.row(map(i));
 	}
@@ -80,21 +79,21 @@ Matrix<T,Dynamic,Dynamic> sortByCol(Matrix<T,Dynamic,Dynamic> &U,int sort_column
 }
 
 // extract unique, sorted values from the vector
-VectorXd uniq1(VectorXd &V){
-	VectorXi cc = EigenSort(V);  // we don't need cc, but V is now sorted!
+Eigen::VectorXd uniq1(Eigen::VectorXd &V){
+	Eigen::VectorXi cc = EigenSort(V);  // we don't need cc, but V is now sorted!
 	const int L = V.size();
 	std::vector<double> uniqC;
 	uniqC.push_back(V(0));
 	for(int i=1;i<L;i++){
 		if(V(i) != V(i-1)) uniqC.push_back(V(i));
 	}
-	Eigen::Map<VectorXd> UU(&uniqC[0],uniqC.size()); // map a VectorXd to the std::vector
+	Eigen::Map<Eigen::VectorXd> UU(&uniqC[0],uniqC.size()); // map a VectorXd to the std::vector
 	return UU;
 }
 
-VectorXd cumsum(VecRef x){
+Eigen::VectorXd cumsum(VecRef x){
   const int n = x.size();
-  VectorXd res(n);
+  Eigen::VectorXd res(n);
   res(0) = x(0);
   for(int i=1;i<n;i++){
     res(i) = x(i) + res(i-1);
@@ -146,6 +145,7 @@ std::vector<uipair> rle(const Eigen::Matrix<T,Eigen::Dynamic,1>& x,size_t size=0
 // [[Rcpp::export]]
 Rcpp::List cdF(Rcpp::NumericMatrix uu, Rcpp::NumericVector ff,int verbose = 0,bool bs = true){
 
+    using namespace Eigen;
 	if(uu.ncol() != 2) Rcpp::stop("cdF: this function is implemented for a 2-column matrix only. Consider passing a pair of columns of U.");
 	if(uu.nrow() != ff.size()) Rcpp::stop("cdF: mismatch in input parameter sizes.");
 	double *pu = &uu[0], *pf = &ff[0];
@@ -173,7 +173,7 @@ Rcpp::List cdF(Rcpp::NumericMatrix uu, Rcpp::NumericVector ff,int verbose = 0,bo
 	// forward declarations
 	const int nX = UX.size(), nY = UY.size();
 	std::vector<uipair> block_counts;  // first elem: index of block start. second: block size
-	int k; // do NOT make this unsigned unless we're absolutely sure that an intermediate calcuation NEVER goes < 0.
+	int k; // do not make this unsigned unless we're absolutely sure that an intermediate calcuation NEVER goes < 0.
 	MatrixXd cdf(MatrixXd::Zero(nX,nY));
 	
 	if(verbose > 0) Rcpp::Rcout << "the grid has dimension " << cdf.rows() << " x " << cdf.cols() << std::endl;

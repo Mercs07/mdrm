@@ -87,6 +87,7 @@ parseDots = function(lst){
 #' \code{\link[mdrm:plot-DRM-missing-method]{plot}}, 
 #' \code{\link[mdrm:names-DRM-method]{names}}
 #' @importFrom stats model.frame model.matrix is.empty.model model.response pnorm cov cor sd
+#' @importFrom methods new
 #' @export
 drm = function(formula,data,subset,contrasts=NULL,fitOptions=list()){
   cl = match.call()   # this one is just used to return the call along with the model summary
@@ -164,6 +165,7 @@ valDRM = function(object){return(TRUE)}  # this could be expanded
 #' @slot user.call used in displayed output; records the formula used to generate X and Y
 #' @slot na_omit indices of any values which were omitted due to missingness
 #' @slot zc records indices of any parameters which were requested to fix at zero during fitting
+#' @importFrom methods setClass new slot slotNames
 
 DRM = setClass(Class = "DRM",
 	slots = c(X = "matrix",
@@ -248,6 +250,7 @@ setMethod(f = `$`, signature = "DRM",
 #' @param ... other arguments; currently ignored
 #' @return matrix of predicted Y values
 #' @rdname predict-method
+#' @importFrom stats delete.response terms as.formula
 #' @export
 setMethod(f = "predict",signature = "DRM",
           definition = function(object,newdata,...){
@@ -348,6 +351,7 @@ setMethod(f = "nobs",
 #' @return A matrix or vector (if argument \code{which} is used), or a list with components \code{alpha}
 #' and \code{beta}.
 #' @rdname coef-method
+#' @importFrom methods slot slotNames
 #' @export
 setMethod(f = "coef",signature = "DRM",
           definition = function(object,...){
@@ -384,6 +388,7 @@ setMethod(f = "coefficients",signature = "DRM",
 #' @param ... extra arguments to satisfy method dispatch; are ignored
 #' @rdname fitted-method
 #' @return The fitted values of the response \code{Y}.
+#' @importFrom stats symnum
 #' @export
 setMethod(f = "fitted",signature = "DRM",
           definition = function(object,...){
